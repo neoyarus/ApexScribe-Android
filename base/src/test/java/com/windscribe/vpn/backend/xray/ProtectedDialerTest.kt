@@ -1,11 +1,15 @@
 package com.windscribe.vpn.backend.xray
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,6 +18,7 @@ import java.io.DataInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 class ProtectedDialerTest {
@@ -49,6 +54,7 @@ class ProtectedDialerTest {
             val calls = AtomicInteger()
             ServerSocket(0, 1, loopback).use { upstream ->
                 ProtectedDialer(scope, loopback, upstream.localPort) { socket ->
+                    assertTrue("Socket must own a real descriptor before Android protection", socket.isBound)
                     assertFalse(socket.isConnected)
                     calls.incrementAndGet()
                     true
@@ -110,4 +116,46 @@ class ProtectedDialerTest {
         }
         scope.cancel()
     }
+
+    @Test fun closingActiveRelayDoesNotEscapeToUncaughtExceptionHandler() =
+        runBlocking {
+            val failures = ConcurrentLinkedQueue<Throwable>()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, failure -> failures.add(failure) })
+            try {
+                ServerSocket(0, 1, loopback).use { upstream ->
+                    ProtectedDialer(scope, loopback, upstream.localPort) { true }.use { dialer ->
+                        val server =
+                            scope.launch {
+                                upstream.accept().use { socket ->
+                                    assertEquals(42, socket.getInputStream().read())
+                                    socket.getOutputStream().write(7)
+                                    // Keep both relays active until close() terminates them.
+                                    socket.getInputStream().read()
+                                }
+                            }
+                        Socket(loopback, dialer.port).use { client ->
+                            authenticate(client, dialer)
+                            request(client, upstream.localPort)
+                            val input = DataInputStream(client.getInputStream())
+                            ByteArray(10).also(input::readFully)
+                            client.getOutputStream().write(42)
+                            // An echoed byte proves the sender coroutine is running,
+                            // rather than closing before it reaches blocking read.
+                            assertEquals(7, input.readUnsignedByte())
+                            dialer.close()
+                            withTimeout(3_000) {
+                                server.join()
+                                scope.coroutineContext[Job]!!
+                                    .children
+                                    .toList()
+                                    .joinAll()
+                            }
+                        }
+                    }
+                }
+                assertTrue("Socket teardown escaped a relay coroutine: ${failures.map { it.javaClass.simpleName }}", failures.isEmpty())
+            } finally {
+                scope.cancel()
+            }
+        }
 }

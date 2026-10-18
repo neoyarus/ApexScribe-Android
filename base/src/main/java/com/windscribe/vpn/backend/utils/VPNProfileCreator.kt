@@ -150,15 +150,17 @@ class VPNProfileCreator
             profile.id = 1
             profile.uuid = UUID.randomUUID()
             profile.name = vpnParameters.hostName
-            // Changing it to use altered ip instead of hostname.
-            // profile.gateway = vpnParameters.hostName
-            profile.gateway = vpnParameters.ikev2Ip
+            val grantIdentity =
+                grantCredentials?.let {
+                    ApexGuardIkev2Identity.constraint(vpnParameters.hostName, vpnParameters.ikev2Ip)
+                }
+            profile.gateway = grantIdentity?.gateway ?: vpnParameters.ikev2Ip
             // Grant servers negotiate their own supported proposals; retain platform defaults.
             if (grantCredentials == null) {
                 profile.espProposal = "aes256gcm16-sha256-ecp384"
                 profile.ikeProposal = "aes256gcm16-sha256-ecp384"
             }
-            profile.remoteId = vpnParameters.hostName
+            profile.remoteId = if (grantCredentials != null) grantIdentity?.remoteId else vpnParameters.hostName
             if (grantCredentials != null) {
                 profile.localId = "ApexGuard"
                 profile.port = 500

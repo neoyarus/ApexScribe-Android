@@ -32,7 +32,9 @@ object XrayRuntime {
 
     @Volatile private var pending: XrayTunnelConfig? = null
     private var pendingToken: String? = null
-    private var servicePresent = false
+    private var activeToken: String? = null
+    private var serviceOwner: String? = null
+    private var stopHandler: (() -> Unit)? = null
 
     @Synchronized fun start(
         context: Context,
@@ -40,6 +42,7 @@ object XrayRuntime {
     ) {
         pending = config
         val token = UUID.randomUUID().toString().also { pendingToken = it }
+        activeToken = token
         mutableState.value = XrayRuntimeState.Starting
         try {
             ContextCompat.startForegroundService(
@@ -51,38 +54,71 @@ object XrayRuntime {
         } catch (_: Exception) {
             pending = null
             pendingToken = null
+            activeToken = null
             mutableState.value = XrayRuntimeState.Failed("VPN service could not start")
         }
     }
 
-    @Synchronized fun stop(context: Context) {
-        pending = null
-        pendingToken = null
-        if (!context.stopService(Intent(context, XrayVpnService::class.java)) &&
-            !servicePresent
-        ) {
-            mutableState.value = XrayRuntimeState.Stopped
+    fun stop(context: Context) {
+        val handler =
+            synchronized(this) {
+                pending = null
+                pendingToken = null
+                activeToken = null
+                stopHandler
+            }
+        if (handler != null) {
+            // Android keeps an established VpnService bound until its TUN closes.
+            // Explicit cleanup must therefore precede stopSelf/onDestroy.
+            handler()
+        } else {
+            context.stopService(Intent(context, XrayVpnService::class.java))
+            synchronized(this) {
+                if (activeToken == null && serviceOwner == null) mutableState.value = XrayRuntimeState.Stopped
+            }
         }
     }
 
     @Synchronized internal fun takePending(token: String?): XrayTunnelConfig? {
-        if (token == null || token != pendingToken) return null
+        if (token == null || token != pendingToken || token != activeToken) return null
         return pending.also {
             pending = null
             pendingToken = null
         }
     }
 
-    @Synchronized internal fun serviceCreated() {
-        servicePresent = true
+    internal fun serviceCreated(
+        owner: String,
+        stop: () -> Unit,
+    ) {
+        val alreadyStopped =
+            synchronized(this) {
+                serviceOwner = owner
+                stopHandler = stop
+                activeToken == null
+            }
+        if (alreadyStopped) stop()
     }
 
-    @Synchronized internal fun serviceCleanedUp() {
-        servicePresent = false
-        mutableState.value = XrayRuntimeState.Stopped
+    @Synchronized internal fun serviceCleanedUp(
+        owner: String,
+        token: String?,
+    ) {
+        if (serviceOwner != owner) return
+        serviceOwner = null
+        stopHandler = null
+        if (activeToken == null || activeToken == token) {
+            activeToken = null
+            mutableState.value = XrayRuntimeState.Stopped
+        }
     }
 
-    internal fun publish(state: XrayRuntimeState) {
-        mutableState.value = state
+    @Synchronized internal fun isCurrent(token: String?): Boolean = token != null && token == activeToken
+
+    @Synchronized internal fun publish(
+        state: XrayRuntimeState,
+        token: String?,
+    ) {
+        if (isCurrent(token)) mutableState.value = state
     }
 }

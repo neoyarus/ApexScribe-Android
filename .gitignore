@@ -44,3 +44,6 @@ maestro/.env
 
 # Maestro test reports
 /maestro-reports/
+
+# Optional separate-UID live network probe
+/networkprobe/build/

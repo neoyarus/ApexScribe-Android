@@ -66,13 +66,16 @@ class XrayVpnService : VpnService() {
     private var dialer: ProtectedDialer? = null
     private var hevStarted = false
     private var configFile: File? = null
+    private val runtimeOwner = UUID.randomUUID().toString()
+    private var requestToken: String? = null
+    private var stopJob: Job? = null
 
     @Volatile private var destroying = false
 
     override fun onCreate() {
         startForegroundImmediately(NotificationConstants.SERVICE_NOTIFICATION_ID)
-        XrayRuntime.serviceCreated()
         super.onCreate()
+        XrayRuntime.serviceCreated(runtimeOwner, ::requestStop)
         startForegroundSafely(notificationBuilder, NotificationConstants.SERVICE_NOTIFICATION_ID, VPNState.Status.Connecting)
     }
 
@@ -81,24 +84,28 @@ class XrayVpnService : VpnService() {
         flags: Int,
         startId: Int,
     ): Int {
-        val config = XrayRuntime.takePending(intent?.getStringExtra(REQUEST_TOKEN))
+        val token = intent?.getStringExtra(REQUEST_TOKEN)
+        val config = if (intent?.action == START) XrayRuntime.takePending(token) else null
         if (intent?.action != START || config == null) {
-            stopSelf(startId)
+            if (!XrayRuntime.isCurrent(requestToken)) requestStop()
             return START_NOT_STICKY
         }
+        if (destroying) return START_NOT_STICKY
+        requestToken = token
         startJob?.cancel()
         startJob =
             scope.launch {
                 lifecycle.withLock {
                     cleanup()
                     try {
-                        startTunnel(config)
+                        check(XrayRuntime.isCurrent(token))
+                        startTunnel(config, token)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Throwable) {
                         cleanup()
-                        XrayRuntime.publish(XrayRuntimeState.Failed("VPN tunnel could not start"))
-                        stopSelf()
+                        XrayRuntime.publish(XrayRuntimeState.Failed("VPN tunnel could not start"), token)
+                        requestStop()
                     }
                 }
             }
@@ -106,7 +113,11 @@ class XrayVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private suspend fun startTunnel(config: XrayTunnelConfig) {
+    private suspend fun startTunnel(
+        config: XrayTunnelConfig,
+        token: String?,
+    ) {
+        XrayDiagnostics.reset()
         check(prepare(this) == null) { "VPN permission required" }
         val grant = config.vless
         val endpoint =
@@ -114,6 +125,7 @@ class XrayVpnService : VpnService() {
                 ?: error("No IPv4 endpoint")
         check(!endpoint.isAnyLocalAddress && !endpoint.isLoopbackAddress && !endpoint.isMulticastAddress)
         coroutineContext.ensureActive()
+        check(XrayRuntime.isCurrent(token))
         val customDns = preferencesHelper.dnsAddress.takeIf { preferencesHelper.dnsMode == PreferencesKeyConstants.DNS_MODE_CUSTOM }
         val dns =
             if (customDns != null && ApexContracts.ipv4(customDns)) {
@@ -170,7 +182,10 @@ class XrayVpnService : VpnService() {
             0,
         )
         check(controller.isRunning)
+        XrayDiagnostics.phase("core_ready")
+        XrayDiagnostics.attach({ controller.measureDelay("https://api.ipify.org") }, null)
         coroutineContext.ensureActive()
+        check(XrayRuntime.isCurrent(token))
         if (preferencesHelper.splitTunnelToggle) {
             excludedIpHolder.loadCachedIps()
         } else {
@@ -198,16 +213,19 @@ class XrayVpnService : VpnService() {
         // JNI starts a thread asynchronously; allow config parsing failure to surface.
         delay(200)
         check(TProxyService.TProxyIsRunning() && controller.isRunning)
+        XrayDiagnostics.phase("tun_ready")
+        XrayDiagnostics.attach({ controller.measureDelay("https://api.ipify.org") }, { TProxyService.TProxyGetStats() })
         coroutineContext.ensureActive()
         check(!destroying)
-        XrayRuntime.publish(XrayRuntimeState.Started)
+        check(XrayRuntime.isCurrent(token))
+        XrayRuntime.publish(XrayRuntimeState.Started, token)
         monitorJob =
             scope.launch {
                 while (true) {
                     delay(2_000)
                     if (!TProxyService.TProxyIsRunning() || !controller.isRunning) {
-                        XrayRuntime.publish(XrayRuntimeState.Failed("VPN tunnel stopped"))
-                        stopSelf()
+                        XrayRuntime.publish(XrayRuntimeState.Failed("VPN tunnel stopped"), token)
+                        requestStop()
                         break
                     }
                 }
@@ -248,24 +266,45 @@ class XrayVpnService : VpnService() {
     }
 
     private suspend fun cleanup() {
+        XrayDiagnostics.phase("cleanup_begin")
+        XrayDiagnostics.attach(null, null)
         monitorJob?.cancel()
         monitorJob = null
+        XrayDiagnostics.phase("cleanup_hev")
         if (hevStarted) runCatching { TProxyService.TProxyStopService() }
         hevStarted = false
+        XrayDiagnostics.phase("cleanup_core")
         runCatching { core?.stopLoop() }
         core = null
+        XrayDiagnostics.phase("cleanup_dialer")
         runCatching { dialer?.close() }
         dialer = null
+        XrayDiagnostics.phase("cleanup_tun")
         runCatching { tun?.close() }
         tun = null
         configFile?.delete()
         configFile = null
         runCatching { proxyDNSManager.stopControlD() }
+        XrayDiagnostics.phase("cleanup_complete")
     }
 
     override fun onRevoke() {
-        XrayRuntime.publish(XrayRuntimeState.Failed("VPN permission revoked"))
-        stopSelf()
+        XrayRuntime.publish(XrayRuntimeState.Failed("VPN permission revoked"), requestToken)
+        requestStop()
+    }
+
+    @Synchronized private fun requestStop() {
+        if (stopJob != null) return
+        destroying = true
+        XrayDiagnostics.phase("stop_requested")
+        startJob?.cancel()
+        stopJob =
+            scope.launch {
+                lifecycle.withLock { cleanup() }
+                // Closing the TUN releases Android's system binding. onDestroy then
+                // confirms cleanup and publishes Stopped before a successor starts.
+                stopSelf()
+            }
     }
 
     override fun onDestroy() {
@@ -273,7 +312,7 @@ class XrayVpnService : VpnService() {
         startJob?.cancel()
         scope.launch {
             lifecycle.withLock { cleanup() }
-            XrayRuntime.serviceCleanedUp()
+            XrayRuntime.serviceCleanedUp(runtimeOwner, requestToken)
             scope.cancel()
         }
         notificationBuilder.cancelNotification(NotificationConstants.SERVICE_NOTIFICATION_ID)

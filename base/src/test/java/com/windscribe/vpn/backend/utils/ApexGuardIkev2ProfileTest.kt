@@ -55,10 +55,10 @@ class ApexGuardIkev2ProfileTest {
         unmockkStatic(TextUtils::class)
     }
 
-    private fun create(): VpnProfile {
+    private fun create(hostname: String = "gateway.example"): VpnProfile {
         creator.createIkEV2Profile(
             LastSelectedLocation(7, "City", "City"),
-            VPNParameters("198.51.100.4", "", "", "", "gateway.example", "", ""),
+            VPNParameters("198.51.100.4", "", "", "", hostname, "", ""),
             ProtocolInformation("ikev2", "500", "", ProtocolConnectionStatus.Disconnected),
             "grant-user" to "grant-pass",
         )
@@ -70,8 +70,8 @@ class ApexGuardIkev2ProfileTest {
         val profile = create()
         assertEquals(VpnProfile.SelectedAppsHandling.SELECTED_APPS_ONLY, profile.selectedAppsHandling)
         assertEquals(setOf("com.example.video", "com.apexscribe.android"), profile.selectedAppsSet)
-        assertEquals("198.51.100.4", profile.gateway)
-        assertEquals("gateway.example", profile.remoteId)
+        assertEquals("gateway.example", profile.gateway)
+        assertNull(profile.remoteId)
         assertEquals("ApexGuard", profile.localId)
         assertEquals("grant-user", profile.username)
         assertEquals("grant-pass", profile.password)
@@ -81,6 +81,22 @@ class ApexGuardIkev2ProfileTest {
         assertEquals(Integer.valueOf(1400), profile.mtu)
         assertEquals(Integer.valueOf(VpnProfile.SPLIT_TUNNELING_BLOCK_IPV6), profile.splitTunneling)
         verify { preferences.lastConnectedUsingSplit = true }
+    }
+
+    @Test fun `known provider wildcard namespace requires exact certificate backed DN at grant IP`() {
+        val profile = create("transit-de-mu-01.net1.ch")
+        assertEquals("198.51.100.4", profile.gateway)
+        assertEquals("CN=*.net1.ch", profile.remoteId)
+        assertNull("CA chain verification must remain enabled", profile.certificateAlias)
+        assertEquals(0, profile.flags)
+    }
+
+    @Test fun `server DN identity uses exact grant hostname certificate constraint through native SAN fallback`() {
+        val profile = create()
+        assertEquals("gateway.example", profile.gateway)
+        assertNull("An explicit IKE ID would reject a valid certificate when the server uses its DN", profile.remoteId)
+        assertNull("Certificate validation must use trusted roots", profile.certificateAlias)
+        assertEquals(0, profile.flags)
     }
 
     @Test fun `exclusive profile excludes selected apps and keeps verification UID inside VPN`() {

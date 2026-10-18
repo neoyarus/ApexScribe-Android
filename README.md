@@ -25,7 +25,7 @@ The stock welcome buttons launch fresh provider-hosted browser login, registrati
 
 The grant determines the actual protocol. An invalid or missing Xray link can use IKEv2 credentials from that same grant. Native startup alone does not report Connected: an HTTPS IP request must succeed through the VPN network.
 
-Both backends apply the existing inclusive/exclusive application preferences and retain the client UID for tunnel verification. Xray applies LAN bypass and excluded IP/domain routes. IKEv2 uses server DNS; Xray sends default or plain custom DNS through VLESS. Encrypted custom DNS requires the upstream ctrld native engine and currently fails through the existing generic connection error in this provider build.
+Both backends apply the existing inclusive/exclusive application preferences and retain the client UID for tunnel verification. Xray applies LAN bypass and excluded IP/domain routes. IKEv2 requires the provider certificate DN for single-label `net1.ch` gateways, with CA/signature checks enabled; other domains retain exact hostname certificate checks. IKEv2 uses server DNS; Xray sends default or plain custom DNS through VLESS. Encrypted custom DNS requires the upstream ctrld native engine and currently fails through the existing generic connection error in this provider build.
 
 Android app exclusions bypass the entire VPN, including its IP-family policy. Android's VPN API cannot impose a global IPv6 firewall on excluded apps. Destination exclusions use the stock Android 13+ route-exclusion API. These differ from the privileged desktop firewall.
 
@@ -40,9 +40,20 @@ adb install -r mobile/build/outputs/apk/androidTest/fdroid/debug/mobile-fdroid-d
 adb shell am instrument -w -e class com.windscribe.mobile.ApexDeviceSmokeTest,com.windscribe.mobile.XrayNativeSmokeTest com.apexscribe.android.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-The connected Samsung SM-T725 runs Android 14. The debug APK builds and installs. The focused provider/backend suite passes 35 tests. All four device smoke tests pass: stock activity startup, real provider HTTPS metadata, strongSwan native library loading, and the shipped Xray raw/gRPC core with authenticated loopback SOCKS startup and shutdown. The broader Windows JVM suite passes 210 of 212 tests; unchanged upstream OpenVPN newline parsing and filename-separator tests assume Linux behavior.
+After signing in through the stock app and granting Android VPN permission, the opt-in live test uses a second app UID to measure real split routing. The probe has no launcher or UI and is excluded from normal builds:
 
-Authenticated login, live IKEv2/Xray traffic, and application bypass exit-IP comparisons remain pending tablet unlock and account sign-in. The tablet currently displays "Device locked by admin". Keep the integration draft until those checks pass.
+```powershell
+./gradlew.bat :networkprobe:assembleDebug -PincludeNetworkProbe=true
+adb install -r networkprobe/build/outputs/apk/debug/networkprobe-debug.apk
+adb shell am instrument -w -r -e class com.windscribe.mobile.ApexLiveTunnelTest -e runLiveTunnelTests true com.apexscribe.android.test/androidx.test.runner.AndroidJUnitRunner
+adb uninstall com.apexscribe.networkprobe
+```
+
+The live test covers both protocols and five app routing modes, checks the physical route separately, reconnects between modes, and restores preferences after disconnecting. Optional `protocols`, `modes`, and `cityId` instrumentation arguments select a subset. Real credentials are entered only through hosted sign-in, never passed as test arguments.
+
+The connected Samsung SM-T725 runs Android 14. The debug APK builds and installs. The focused provider/backend suite passes 40 tests. All four device smoke tests pass: stock activity startup, real provider HTTPS metadata, strongSwan native library loading, and the shipped Xray raw/gRPC core with authenticated loopback SOCKS startup and shutdown. The broader Windows JVM suite passes 210 of 212 tests; unchanged upstream OpenVPN newline parsing and filename-separator tests assume Linux behavior.
+
+Hosted login and session persistence pass on the tablet. Both IKEv2 and Xray pass all ten live routing cases: full tunneling, exclusive/inclusive selected apps, and both empty selection modes. Direct Xray → IKEv2 → Xray switching also passes. Each case verifies tunneled HTTPS traffic and a separate-UID probe; bypassed traffic must match the physical address, while tunneled traffic must differ. Provider exits may use different NAT addresses for different destinations.
 
 ## Source and licenses
 
