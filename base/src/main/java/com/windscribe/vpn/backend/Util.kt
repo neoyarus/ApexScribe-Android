@@ -6,6 +6,7 @@ package com.windscribe.vpn.backend
 
 import android.app.Activity
 import android.content.Context
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.Windscribe
 import com.windscribe.vpn.Windscribe.Companion.appContext
@@ -33,6 +34,15 @@ import java.io.StringReader
 object Util {
     const val LAST_SELECTED_LOCATION = "last_selected_location.vp"
     const val VPN_PROFILE_NAME = "wd.vp"
+
+    @PublishedApi
+    @Volatile
+    internal var ephemeralProfile: Any? = null
+
+    fun clearProfile() {
+        ephemeralProfile = null
+        File(appContext.filesDir, VPN_PROFILE_NAME).delete()
+    }
 
     fun getLastSelectedLocation(context: Context): LastSelectedLocation? {
         try {
@@ -64,6 +74,7 @@ object Util {
         }
 
     inline fun <reified T> getProfile(): T? {
+        if (BuildConfig.APEXGUARD_ENABLED) return ephemeralProfile as? T
         try {
             val file = ObjectInputStream(Windscribe.appContext.openFileInput(VPN_PROFILE_NAME))
             val obj = file.readObject()
@@ -96,6 +107,11 @@ object Util {
     }
 
     fun saveProfile(profile: Any): String {
+        if (BuildConfig.APEXGUARD_ENABLED) {
+            ephemeralProfile = profile
+            File(appContext.filesDir, VPN_PROFILE_NAME).delete()
+            return profile.javaClass.simpleName
+        }
         val vpnFile =
             ObjectOutputStream(
                 Windscribe.appContext.openFileOutput(
@@ -192,6 +208,28 @@ object Util {
     }
 
     fun getAppSupportedProtocolList(suggestedProtocol: Pair<String, String>? = null): ThreadSafeList<ProtocolInformation> {
+        if (BuildConfig.APEXGUARD_ENABLED) {
+            val protocols =
+                ThreadSafeList<ProtocolInformation>().apply {
+                    add(
+                        ProtocolInformation(
+                            PreferencesKeyConstants.PROTO_IKev2,
+                            "500",
+                            appContext.getString(R.string.iKEV2_description),
+                            ProtocolConnectionStatus.Disconnected,
+                        ),
+                    )
+                    add(ProtocolInformation("xray", "443", "", ProtocolConnectionStatus.Disconnected))
+                }
+            suggestedProtocol?.let { suggestion ->
+                protocols.firstOrNull { it.protocol == suggestion.first }?.let {
+                    protocols.remove(it)
+                    it.port = suggestion.second
+                    protocols.add(0, it)
+                }
+            }
+            return protocols
+        }
         val protocol1 =
             ProtocolInformation(
                 PreferencesKeyConstants.PROTO_IKev2,
@@ -273,6 +311,7 @@ object Util {
             PreferencesKeyConstants.PROTO_STEALTH -> "Stealth"
             PROTO_WIRE_GUARD -> "WireGuard"
             PreferencesKeyConstants.PROTO_WS_TUNNEL -> "WStunnel"
+            "xray" -> "Xray"
             else -> "IKEv2"
         }
 

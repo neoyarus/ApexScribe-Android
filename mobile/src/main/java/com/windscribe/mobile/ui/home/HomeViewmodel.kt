@@ -193,7 +193,9 @@ class HomeViewmodelImpl
         private fun fetchUserState() {
             viewModelScope.launch {
                 userRepository.user.filterNotNull().collectLatest {
-                    if (it.isPro) {
+                    if (it.providerManaged) {
+                        _userState.emit(UserState.Loading)
+                    } else if (it.isPro) {
                         _userState.emit(UserState.Pro)
                     } else if (it.maxData == -1L) {
                         _userState.emit(UserState.UnlimitedData)

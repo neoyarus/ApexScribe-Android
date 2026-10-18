@@ -105,3 +105,6 @@
 # Keep Material Design components
 -keep class com.google.android.material.** { *; }
 -keepclassmembers class com.google.android.material.** { *; }
+-keep class hev.htproxy.TProxyService { *; }
+-keep class libv2ray.** { *; }
+-keep class go.** { *; }

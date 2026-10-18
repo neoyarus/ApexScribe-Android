@@ -8,7 +8,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.windscribe.vpn.Windscribe
-import com.windscribe.vpn.api.ApiCallManager
 import com.windscribe.vpn.api.IApiCallManager
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.apppreference.SecurePreferences
@@ -27,6 +26,7 @@ import com.windscribe.vpn.backend.utils.WindVpnController
 import com.windscribe.vpn.backend.wireguard.WgLogger
 import com.windscribe.vpn.backend.wireguard.WireguardBackend
 import com.windscribe.vpn.backend.wireguard.WireguardContextWrapper
+import com.windscribe.vpn.backend.xray.XrayBackend
 import com.windscribe.vpn.billing.PurchaseManager
 import com.windscribe.vpn.constants.NetworkKeyConstants
 import com.windscribe.vpn.constants.NotificationConstants
@@ -478,6 +478,8 @@ open class BaseApplicationModule {
         openVPNBackend: OpenVPNBackend,
         iKev2VpnBackend: IKev2VpnBackend,
         wireguardBackend: WireguardBackend,
+        xrayBackend: XrayBackend,
+        vpnConnectionStateManager: VPNConnectionStateManager,
     ): VpnBackendHolder =
         VpnBackendHolder(
             coroutineScope,
@@ -485,6 +487,8 @@ open class BaseApplicationModule {
             iKev2VpnBackend,
             wireguardBackend,
             openVPNBackend,
+            xrayBackend,
+            vpnConnectionStateManager,
         )
 
     @Provides
@@ -515,9 +519,11 @@ open class BaseApplicationModule {
     @Provides
     @Singleton
     fun providesApiCallManagerInterface(
-        wsNetWrapper: WSNetWrapper,
+        apexGuardService: com.windscribe.vpn.api.apexguard.ApexGuardService,
         preferencesHelper: PreferencesHelper,
-    ): IApiCallManager = ApiCallManager(wsNetWrapper, preferencesHelper)
+    ): IApiCallManager =
+        com.windscribe.vpn.api.apexguard
+            .ApexApiCallManager(apexGuardService, preferencesHelper)
 
     @Provides
     @Singleton

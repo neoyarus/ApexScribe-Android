@@ -22,6 +22,10 @@ android {
 
     defaultConfig {
         minSdk = rootProject.extra["appMinSdk"] as Int
+        (project.findProperty("abiFilter") as String?)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?.let { ndk.abiFilters += it }
 //        versionCode = 175
 //        versionName = "0.7.21"
 

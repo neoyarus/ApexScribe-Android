@@ -1,0 +1,39 @@
+name: Android client
+
+on:
+  pull_request:
+  push:
+    branches: [feature/apexguard-android, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tablet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Verify pinned native dependencies
+        run: |
+          echo 'fd6cb61fed873e465c3064327dffbcb22dc3fd78260d162ec9e868db2582495f  xray/libs/libv2ray.aar' | sha256sum -c
+          echo 'fbbf014c1c4c6d1e0922db88542abd9dc726600473bdfdc8039ed157b4ba02b0  xray/libs/hev-socks5-tunnel.aar' | sha256sum -c
+      - name: Build tablet and test APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew :mobile:assembleFdroidDebug :mobile:assembleFdroidDebugAndroidTest -PabiFilter=arm64-v8a --console=plain
+      - name: Test provider and VPN integration
+        run: ./gradlew :base:testFdroidDebugUnitTest --tests '*Apex*' --tests '*Xray*Test' --tests '*ProtectedDialerTest' --tests '*WindVpnControllerForceDisconnectTest' -PabiFilter=arm64-v8a --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApexScribe-Android-arm64
+          path: |
+            mobile/build/outputs/apk/fdroid/debug/*.apk
+            mobile/build/outputs/apk/androidTest/fdroid/debug/*.apk
+          retention-days: 7

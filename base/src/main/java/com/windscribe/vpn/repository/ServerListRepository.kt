@@ -94,6 +94,13 @@ class ServerListRepository
         }
 
         suspend fun update() {
+            if (com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                val locations = loadLocations()
+                if (locations is CallResult.Error) throw Exception(locations.errorMessage)
+                val servers = loadFullServerList()
+                if (servers is CallResult.Error) throw Exception(servers.errorMessage)
+                return
+            }
             val isFirstLoad = preferenceHelper.serverRevision == 0L
             val migrationRequired = preferenceHelper.migrationRequired
             if (isFirstLoad || migrationRequired) {

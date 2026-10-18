@@ -4,6 +4,16 @@
 /config/cicd-config.properties
 .DS_Store
 /build
+**/build/
+**/.cxx/
+build-tablet.log
+test-*.log
+device-*.log
+tablet-*
+.local/
+.local-*
+.kotlin/
+/config/sign.properties
 /captures
 /tv/release
 /openvpn/build

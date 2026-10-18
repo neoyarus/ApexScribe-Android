@@ -2,6 +2,7 @@ package com.windscribe.vpn.backend
 
 import com.windscribe.common.DNSDetails
 import com.windscribe.common.DnsType
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants
@@ -139,6 +140,7 @@ class ProxyDNSManager(
             preferenceHelper.dnsAddress != null
 
     suspend fun startControlDIfRequired() {
+        if (BuildConfig.APEXGUARD_ENABLED) return
         if (shouldRunControlD() && isRunning.get().not()) {
             startControlD()
         } else if (!shouldRunControlD() && isRunning.get()) {
@@ -234,6 +236,7 @@ class ProxyDNSManager(
         }
 
     suspend fun stopControlD() {
+        if (BuildConfig.APEXGUARD_ENABLED) return
         if (isRunning.get()) {
             cdLib.stopCd(true, 0)
             controlDJob?.join()

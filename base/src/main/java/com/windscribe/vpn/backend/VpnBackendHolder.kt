@@ -16,6 +16,9 @@ import com.windscribe.vpn.backend.ikev2.IKev2VpnBackend
 import com.windscribe.vpn.backend.openvpn.OpenVPNBackend
 import com.windscribe.vpn.backend.wireguard.WireGuardVpnProfile
 import com.windscribe.vpn.backend.wireguard.WireguardBackend
+import com.windscribe.vpn.backend.xray.XrayBackend
+import com.windscribe.vpn.backend.xray.XrayTunnelConfig
+import com.windscribe.vpn.state.VPNConnectionStateManager
 import de.blinkt.openvpn.VpnProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -31,6 +34,8 @@ class VpnBackendHolder(
     private val iKev2VpnBackend: IKev2VpnBackend,
     private val wireguardBackend: WireguardBackend,
     private val openVPNBackend: OpenVPNBackend,
+    private val xrayBackend: XrayBackend,
+    private val stateManager: VPNConnectionStateManager,
 ) {
     var activeBackend: VpnBackend? = null
     private val vpnLogger = LoggerFactory.getLogger("vpn")
@@ -54,6 +59,8 @@ class VpnBackendHolder(
                 return null
             }
 
+            "xray" -> if (Util.getProfile<XrayTunnelConfig>() != null) xrayBackend else null
+
             PROTO_WIRE_GUARD -> {
                 if (Util.getProfile<WireGuardVpnProfile>() != null) {
                     return wireguardBackend
@@ -72,10 +79,17 @@ class VpnBackendHolder(
         connectionId: UUID,
     ) {
         scope.launch {
+            val requestedState = stateManager.state.value
+            if (requestedState.connectionId != connectionId || requestedState.status != VPNState.Status.Connecting) return@launch
             val active: Boolean = activeBackend?.active == true
             if (active) {
                 vpnLogger.debug("Active VPN backend found.")
                 delay(100)
+            }
+            if (stateManager.state.value.connectionId != connectionId ||
+                stateManager.state.value.status != VPNState.Status.Connecting
+            ) {
+                return@launch
             }
             activeBackend = getBackend()
             activeBackend?.let {

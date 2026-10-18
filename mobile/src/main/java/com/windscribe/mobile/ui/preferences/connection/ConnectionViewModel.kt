@@ -265,6 +265,10 @@ class ConnectionViewModelImpl
         }
 
         private fun buildProtocolInfo() {
+            if (portMapItems.isEmpty()) return
+            if (portMapItems.none { it.protoItem.proto == preferencesHelper.savedProtocol }) {
+                preferencesHelper.savedProtocol = portMapItems.first().protoItem.proto
+            }
             portMapItems
                 .map {
                     DropDownStringItem(it.protoItem.proto, it.protoItem.heading)

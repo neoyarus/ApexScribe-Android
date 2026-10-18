@@ -28,30 +28,32 @@ android {
     testOptions {
         targetSdk = rootProject.extra["appTargetSdk"] as Int
     }
-    externalNativeBuild {
-        cmake {
-            path("tools/CMakeLists.txt")
-        }
-    }
-    buildTypes {
-        all {
-            externalNativeBuild {
-                cmake {
-                    targets("libwg-go.so", "libwg.so")
-                    arguments("-DGRADLE_USER_HOME=${project.gradle.gradleUserHomeDir}")
-                }
+    if (rootProject.extra["apexguardBuild"] != true) {
+        externalNativeBuild {
+            cmake {
+                path("tools/CMakeLists.txt")
             }
         }
-        release {
-            externalNativeBuild {
-                cmake {
-                    arguments("-DANDROID_PACKAGE_NAME=com.wireguard.tunnel")
+        buildTypes {
+            all {
+                externalNativeBuild {
+                    cmake {
+                        targets("libwg-go.so", "libwg.so")
+                        arguments("-DGRADLE_USER_HOME=${project.gradle.gradleUserHomeDir}")
+                    }
                 }
             }
-        }
-        debug {
-            externalNativeBuild {
-                cmake {
+            release {
+                externalNativeBuild {
+                    cmake {
+                        arguments("-DANDROID_PACKAGE_NAME=com.wireguard.tunnel")
+                    }
+                }
+            }
+            debug {
+                externalNativeBuild {
+                    cmake {
+                    }
                 }
             }
         }

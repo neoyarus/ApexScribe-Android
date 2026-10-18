@@ -32,6 +32,8 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class CharonVpnServiceWrapper : CharonVpnService() {
     companion object {
+        const val CONNECT_ACTION = "com.windscribe.vpn.IKEV2_CONNECT"
+        const val CONNECTION_ID = "connection_id"
         private const val STATE_CHILD_SA_UP = 1
         private const val STATE_CHILD_SA_DOWN = 2
         private const val STATE_AUTH_ERROR = 3
@@ -82,8 +84,7 @@ class CharonVpnServiceWrapper : CharonVpnService() {
     }
 
     override fun getMainActivityClass(): Class<*> =
-        appContext.applicationInterface.homeIntent.component!!
-            .javaClass
+        Class.forName(requireNotNull(appContext.applicationInterface.homeIntent.component).className)
 
     override fun buildNotification(publicVersion: Boolean): Notification = windNotificationBuilder.buildNotification(Connecting)
 
@@ -101,8 +102,8 @@ class CharonVpnServiceWrapper : CharonVpnService() {
             }
         }
         windNotificationBuilder.cancelNotification(NotificationConstants.SERVICE_NOTIFICATION_ID)
-        iKev2VpnBackend.serviceDestroyed()
         super.onDestroy()
+        iKev2VpnBackend.serviceDestroyed()
     }
 
     override fun getNotificationID(): Int = NotificationConstants.SERVICE_NOTIFICATION_ID
@@ -131,6 +132,13 @@ class CharonVpnServiceWrapper : CharonVpnService() {
             }
 
             else -> {
+                if (!iKev2VpnBackend.active) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                if (intent.getStringExtra(CONNECTION_ID) != iKev2VpnBackend.connectionId?.toString()) {
+                    return START_NOT_STICKY
+                }
                 startForegroundSafely(
                     windNotificationBuilder,
                     NotificationConstants.SERVICE_NOTIFICATION_ID,

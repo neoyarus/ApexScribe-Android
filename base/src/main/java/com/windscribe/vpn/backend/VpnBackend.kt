@@ -4,6 +4,7 @@
 
 package com.windscribe.vpn.backend
 
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.api.IApiCallManager
@@ -195,8 +196,10 @@ abstract class VpnBackend(
                         // Initial delay before first attempt
                         delay(startDelay.milliseconds)
                         // Wait for WSNet to be fully initialized before calling bridge API
-                        ensureWSNetReady()
-                        configureBridgeAPI(selectedIp)
+                        if (!BuildConfig.APEXGUARD_ENABLED) {
+                            ensureWSNetReady()
+                            configureBridgeAPI(selectedIp)
+                        }
                         // Pin IP if available (WireGuard only)
                         val ipPinningFailed = attemptIpPinning(pinnedLocation, selectedIp)
 
@@ -267,18 +270,19 @@ abstract class VpnBackend(
     }
 
     fun updateState(vpnState: VPNState) {
+        // Capture ownership before dispatch: a backend instance is reused by later attempts.
+        val ownerConnectionId = connectionId ?: return
+        vpnState.protocolInformation = protocolInformation
+        vpnState.connectionId = ownerConnectionId
+        error?.let {
+            if (vpnState.status == VPNState.Status.Disconnected) {
+                vpnState.error = it
+                error = null
+            }
+        }
         mainScope.launch {
-            vpnState.protocolInformation = protocolInformation
-            vpnState.connectionId = connectionId
-            error?.let {
-                if (vpnState.status == VPNState.Status.Disconnected) {
-                    vpnState.error = it
-                    error = null
-                }
-            }
-            if (connectionId != null) {
-                stateManager.setState(vpnState)
-            }
+            if (BuildConfig.APEXGUARD_ENABLED && stateManager.state.value.connectionId != ownerConnectionId) return@launch
+            stateManager.setState(vpnState)
         }
     }
 
@@ -302,7 +306,7 @@ abstract class VpnBackend(
             preferencesHelper.lastDisconnectionError == VPNState.ErrorType.BrokenTunnel.name
 
         // If app is in foreground or not a tunnel recovery, try other protocols.
-        if (reconnecting.not() && !isTunnelRecovery) {
+        if (BuildConfig.APEXGUARD_ENABLED || (reconnecting.not() && !isTunnelRecovery)) {
             mainScope.launch {
                 vpnLogger.info("Connectivity test failed.")
                 disconnect(

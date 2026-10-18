@@ -10,6 +10,9 @@ import com.google.gson.annotations.SerializedName
 
 @Keep
 class UserSessionResponse {
+    @Expose
+    var providerManaged: Boolean = false
+
     @SerializedName("alc")
     @Expose
     var alcList: List<String>? = null

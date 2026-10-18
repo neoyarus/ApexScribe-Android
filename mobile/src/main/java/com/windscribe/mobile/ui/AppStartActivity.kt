@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.graphics.toColorInt
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import com.windscribe.mobile.R
 import com.windscribe.mobile.ui.common.openUrl
@@ -31,14 +32,19 @@ import com.windscribe.mobile.ui.popup.EncryptionWarningDialog
 import com.windscribe.mobile.ui.popup.SubscriptionGraceDialog
 import com.windscribe.mobile.ui.theme.AndroidTheme
 import com.windscribe.vpn.Windscribe.Companion.appContext
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.api.response.PushNotificationAction
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants.DARK_THEME
 import com.windscribe.vpn.billing.GooglePlaySubscriptionUrl
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import java.util.Locale
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class AppStartActivity : AppCompatActivity() {
+    @Inject
+    lateinit var apexGuardService: ApexGuardService
     private val viewmodelImpl: AppStartActivityViewModelImpl by viewModels()
     val viewmodel: AppStartActivityViewModel get() = viewmodelImpl
     lateinit var navController: NavController
@@ -80,6 +86,8 @@ class AppStartActivity : AppCompatActivity() {
         enableEdgeToEdge(navigationBarStyle = navigationBarStyle)
 
         super.onCreate(savedInstanceState)
+        appContext.preference.sessionHash =
+            if (apexGuardService.authenticated.value) ApexGuardService.SESSION_MARKER else null
         requestedOrientation =
             if (isTablet()) {
                 ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -180,6 +188,16 @@ class AppStartActivity : AppCompatActivity() {
      * the promo, and it is gone on a fresh launch. That is intended, not a leak.
      */
     private fun handleIntent(intent: Intent?) {
+        val callback = intent?.data
+        if (callback?.scheme == "apexguard" && callback.host == "login") {
+            // The service validates the complete callback and binds the exchange to
+            // the gateway selected when this browser sign-in began.
+            lifecycleScope.launch {
+                apexGuardService.completeLogin(callback.toString())
+            }
+            intent.data = null
+            return
+        }
         val extras = intent?.extras ?: return
         val type = extras.getString("type") ?: return
         when (type) {

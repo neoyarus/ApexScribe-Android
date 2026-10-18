@@ -1,12 +1,14 @@
 package com.windscribe.mobile.ui.auth
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.windscribe.mobile.ui.helper.AccessibilityHelper
 import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.api.IApiCallManager
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.api.response.AuthToken
 import com.windscribe.vpn.api.response.UserLoginResponse
 import com.windscribe.vpn.apppreference.PreferencesHelper
@@ -64,12 +66,13 @@ class LoginViewModel
         private val preferenceHelper: PreferencesHelper,
         private val firebaseManager: FirebaseManager,
         private val userRepository: UserRepository,
+        private val apexGuardService: ApexGuardService,
     ) : ViewModel() {
         private var captchaRefreshJob: Job? = null
         private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
         val loginState: StateFlow<LoginState> = _loginState.asStateFlow()
 
-        private val _loginButtonEnabled = MutableStateFlow(false)
+        private val _loginButtonEnabled = MutableStateFlow(true)
         val loginButtonEnabled: StateFlow<Boolean> = _loginButtonEnabled.asStateFlow()
 
         private val _twoFactorEnabled = MutableStateFlow(false)
@@ -97,6 +100,38 @@ class LoginViewModel
         private var accountHash = ""
         private val logger = LoggerFactory.getLogger("LoginScreen")
 
+        init {
+            viewModelScope.launch {
+                apexGuardService.authenticated.collect { signedIn ->
+                    if (signedIn) {
+                        preferenceHelper.sessionHash = ApexGuardService.SESSION_MARKER
+                        withContext(Dispatchers.IO) {
+                            userRepository.prepareDashboard(null).collect { state ->
+                                when (state) {
+                                    is UserDataState.Success -> updateState(LoginState.Success)
+                                    is UserDataState.Loading -> updateState(LoginState.LoggingIn(state.status))
+                                    is UserDataState.Error -> {
+                                        _loginButtonEnabled.value = true
+                                        updateState(
+                                            LoginState.Error(AuthError.LocalizedInputError(com.windscribe.vpn.R.string.no_internet)),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            viewModelScope.launch {
+                apexGuardService.loginFailed.collect { failed ->
+                    if (failed) {
+                        _loginButtonEnabled.value = true
+                        updateState(LoginState.Error(AuthError.LocalizedInputError(com.windscribe.vpn.R.string.no_internet)))
+                    }
+                }
+            }
+        }
+
         fun onUsernameChanged(username: String) {
             this.username = username
             validateInput()
@@ -115,7 +150,7 @@ class LoginViewModel
             viewModelScope.launch {
                 _selectedAuthType.emit(authType)
                 updateState(LoginState.Idle)
-                _loginButtonEnabled.emit(false)
+                _loginButtonEnabled.emit(true)
                 if (authType == AuthType.STANDARD) {
                     validateInput()
                 } else {
@@ -136,7 +171,7 @@ class LoginViewModel
         private fun validateHashedInput() {
             viewModelScope.launch {
                 updateState(LoginState.Idle)
-                _loginButtonEnabled.emit(accountHash.length >= 2)
+                _loginButtonEnabled.emit(true)
             }
         }
 
@@ -225,14 +260,21 @@ class LoginViewModel
                     return@launch
                 }
 
-                // For hashed login, use the hash as both username and password
-                if (_selectedAuthType.value == AuthType.HASHED) {
-                    val trimmedHash = accountHash.trim()
-                    username = trimmedHash
-                    password = trimmedHash
+                try {
+                    if (apexGuardService.authenticated.value) {
+                        handleSuccessfulLogin(ApexGuardService.SESSION_MARKER)
+                    } else {
+                        val url = withContext(Dispatchers.IO) { apexGuardService.beginLogin() }
+                        appContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        updateState(LoginState.Idle)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    updateState(LoginState.Error(AuthError.LocalizedInputError(com.windscribe.vpn.R.string.no_internet)))
+                } finally {
+                    _loginButtonEnabled.emit(true)
                 }
-
-                startLoginProcess()
             }
         }
 
@@ -243,7 +285,7 @@ class LoginViewModel
         private fun validateInput() {
             viewModelScope.launch {
                 updateState(LoginState.Idle)
-                _loginButtonEnabled.emit(isValidUsername() && isValidPassword())
+                _loginButtonEnabled.emit(true)
             }
         }
 

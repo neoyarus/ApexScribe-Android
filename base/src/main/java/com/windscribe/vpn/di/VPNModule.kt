@@ -1,8 +1,10 @@
 package com.windscribe.vpn.di
 
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.autoconnection.AutoConnectionManager
 import com.windscribe.vpn.backend.VpnBackendHolder
+import com.windscribe.vpn.backend.utils.ApexGuardGrantStore
 import com.windscribe.vpn.backend.utils.ExcludedIpHolder
 import com.windscribe.vpn.backend.utils.VPNProfileCreator
 import com.windscribe.vpn.backend.utils.WindVpnController
@@ -40,6 +42,8 @@ class VPNModule {
         preferencesHelper: PreferencesHelper,
         deviceStateManager: DeviceStateManager,
         excludedIpHolder: ExcludedIpHolder,
+        apexGuardService: ApexGuardService,
+        apexGrantStore: ApexGuardGrantStore,
     ): WindVpnController =
         WindVpnController(
             coroutineScope,
@@ -55,5 +59,7 @@ class VPNModule {
             localDbInterface,
             deviceStateManager,
             excludedIpHolder,
+            apexGuardService,
+            apexGrantStore,
         )
 }
