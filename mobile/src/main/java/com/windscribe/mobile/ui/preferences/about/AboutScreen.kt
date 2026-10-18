@@ -31,6 +31,7 @@ import com.windscribe.mobile.ui.helper.hapticClickable
 import com.windscribe.mobile.ui.nav.LocalNavController
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.primaryTextColor
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.constants.NetworkKeyConstants
 
@@ -47,7 +48,9 @@ fun AboutScreen() {
             R.string.jobs to NetworkKeyConstants.URL_JOB,
             R.string.software_licenses to NetworkKeyConstants.URL_VIEW_LICENCE,
             R.string.changelog to NetworkKeyConstants.URL_CHANGELOG,
-        )
+        ).filter { (title, _) ->
+            !BuildConfig.APEXGUARD_ENABLED || title == R.string.software_licenses
+        }
     PreferenceBackground {
         Column(modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)) {
             PreferencesNavBar(stringResource(R.string.about_us)) {

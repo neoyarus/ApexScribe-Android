@@ -183,7 +183,9 @@ class AccountViewModelImpl
                             User.EmailStatus.EmailProvided -> UnconfirmedEmail(it.email ?: "")
                             User.EmailStatus.Confirmed -> Email(it.email ?: "")
                         }
-                    if (it.isGhost) {
+                    if (it.providerManaged) {
+                        _accountState.value = AccountState.Loading
+                    } else if (it.isGhost) {
                         it.maxData
                         _accountState.value = AccountState.Ghost
                     } else if (it.isPro) {

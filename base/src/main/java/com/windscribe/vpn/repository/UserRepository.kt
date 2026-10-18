@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.util.Date
 import java.util.UUID
@@ -65,6 +66,8 @@ class UserRepository(
     val user: StateFlow<User?> = _user.asStateFlow()
     private val logger = LoggerFactory.getLogger("data")
     private val logoutMutex = Mutex()
+    private val dashboardMutex = Mutex()
+    private var providerDashboardReady = false
 
     init {
         reload()
@@ -180,6 +183,7 @@ class UserRepository(
 
     private fun onSessionDeleted() {
         scope.launch {
+            providerDashboardReady = false
             preferenceHelper.sessionHash = null
             preferenceHelper.globalUserConnectionPreference = false
             WindUtilities.deleteProfileCompletely(appContext)
@@ -281,47 +285,54 @@ class UserRepository(
 
     fun prepareDashboard(firebaseToken: String?): Flow<UserDataState> =
         flow {
-            preferenceHelper.loginTime = Date()
-            emit(UserDataState.Loading("Getting session"))
-            unblockWgParamsRepository.update()
-            try {
-                val backup = preferenceHelper.getBackupParameter()
-                val result = apiManager.getSessionGeneric(firebaseToken, backup = backup).callResult<UserSessionResponse>()
-                when (result) {
-                    is CallResult.Error -> {
-                        logger.debug("Error getting session: ${result.errorMessage}")
-                        emit(UserDataState.Error(result.errorMessage))
-                        return@flow
-                    }
+            dashboardMutex.withLock {
+                if (com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED && providerDashboardReady) {
+                    emit(UserDataState.Success)
+                    return@withLock
+                }
+                preferenceHelper.loginTime = Date()
+                emit(UserDataState.Loading("Getting session"))
+                unblockWgParamsRepository.update()
+                try {
+                    val backup = preferenceHelper.getBackupParameter()
+                    val result = apiManager.getSessionGeneric(firebaseToken, backup = backup).callResult<UserSessionResponse>()
+                    when (result) {
+                        is CallResult.Error -> {
+                            logger.debug("Error getting session: ${result.errorMessage}")
+                            emit(UserDataState.Error(result.errorMessage))
+                            return@flow
+                        }
 
-                    is CallResult.Success -> {
-                        logger.debug("Successfully added token to user account.")
-                        if (preferenceHelper.deviceUuid == null) {
-                            logger.debug("No device id is found for the current user, generating and saving UUID")
-                            preferenceHelper.deviceUuid = UUID.randomUUID().toString()
+                        is CallResult.Success -> {
+                            logger.debug("Successfully added token to user account.")
+                            if (preferenceHelper.deviceUuid == null) {
+                                logger.debug("No device id is found for the current user, generating and saving UUID")
+                                preferenceHelper.deviceUuid = UUID.randomUUID().toString()
+                            }
                         }
                     }
+                    reload(result.data, null)
+                    val staticIpCount = result.data.sipCount()
+                    if (staticIpCount > 0) {
+                        emit(UserDataState.Loading("Getting static IPs"))
+                        staticIpRepository.updateFromApi()
+                    }
+                    emit(UserDataState.Loading("Getting connection data"))
+                    connectionDataRepository.update()
+                    emit(UserDataState.Loading("Getting server list"))
+                    serverListRepository.update()
+                    if (appContext.vpnConnectionStateManager.isVPNActive()) {
+                        vpnController.disconnectAsync()
+                    }
+                    Util.removeLastSelectedLocation()
+                    workManager.onAppStart()
+                    workManager.onAppMovedToForeground()
+                    workManager.updateNodeLatencies()
+                    providerDashboardReady = result.data.providerManaged
+                    emit(UserDataState.Success)
+                } catch (e: Exception) {
+                    emit(UserDataState.Error(e.localizedMessage ?: "Unknown error"))
                 }
-                reload(result.data, null)
-                val staticIpCount = result.data.sipCount()
-                if (staticIpCount > 0) {
-                    emit(UserDataState.Loading("Getting static IPs"))
-                    staticIpRepository.updateFromApi()
-                }
-                emit(UserDataState.Loading("Getting connection data"))
-                connectionDataRepository.update()
-                emit(UserDataState.Loading("Getting server list"))
-                serverListRepository.update()
-                if (appContext.vpnConnectionStateManager.isVPNActive()) {
-                    vpnController.disconnectAsync()
-                }
-                Util.removeLastSelectedLocation()
-                workManager.onAppStart()
-                workManager.onAppMovedToForeground()
-                workManager.updateNodeLatencies()
-                emit(UserDataState.Success)
-            } catch (e: Exception) {
-                emit(UserDataState.Error(e.localizedMessage ?: "Unknown error"))
             }
         }
 }

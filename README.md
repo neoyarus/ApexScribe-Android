@@ -1,331 +1,66 @@
-# 🛡️ Windscribe VPN for Android
+# ApexScribe Android
 
-<div align="center">
+ApexGuard client built from the official Windscribe Android application. The phone and tablet client retains upstream components, styling, assets, and localized copy, with Windscribe-only service controls hidden. Existing login, location, connection, protocol, and split-tunneling controls use the ApexGuard provider integration. The installed package is `com.apexscribe.android`, so it can coexist with Windscribe.
 
-**Your Digital Privacy Companion** 🚀
+Android 10 or newer is required. IKEv2 uses bundled strongSwan; Xray uses VLESS/REALITY over raw TCP or gRPC with the pinned native dependencies described in [xray/README.md](xray/README.md). This fork is independent of Windscribe.
 
-[![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
-[![Kotlin](https://img.shields.io/badge/Language-Kotlin-purple.svg)](https://kotlinlang.org/)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+## Build and install
 
-*Developed by Windscribe Limited - Because your privacy matters*
+Use Java 21 to run Gradle and an Android SDK with API 36. Gradle installs the pinned NDK if its SDK license is already accepted. Restore the verified Xray dependencies before building a fresh checkout:
 
-[Features](#-key-features) • [Building](#-building-from-source) • [Architecture](#-architecture) • [Contributing](#-contributing) • [License](#-license)
-
-</div>
-
----
-
-## 📱 About
-
-Windscribe VPN is a top-notch VPN application that offers comprehensive privacy and security features for Android devices. Whether you're browsing on your phone, tablet, or Android TV, Windscribe has you covered with military-grade encryption and blazing-fast servers worldwide.
-
-## ✨ Key Features
-
-### 🔐 **Authentication & Account Management**
-- **SSO Login** - One-click authentication
-- **Captcha Support** - Bot protection that actually works
-- **Email Verification** - Get free data when you confirm your email
-- **Account Management** - Full control at your fingertips
-
-### 🌐 **Six VPN Protocols** (Because one size doesn't fit all!)
-1. **OpenVPN UDP** - Fast and efficient
-2. **OpenVPN TCP** - Reliable and stable
-3. **IKEv2** - Lightning-fast with StrongSwan implementation
-4. **Stealth Protocol** - OpenVPN TCP with a cloak of invisibility
-5. **WSTunnel** - OpenVPN over WebSocket for maximum stealth
-6. **WireGuard** - The new kid on the block, and it's fast! ⚡
-
-### 🎯 **Advanced Features**
-- **Per-Network Configuration** - Different protocols for different networks
-- **Network Auto-Detection** - Seamless switching (requires location permissions)
-- **Split Tunneling** - Choose which apps use the VPN
-- **App Decoy Traffic** - Throw off surveillance with fake traffic
-- **Custom Configurations** - Import your own WireGuard/OpenVPN configs
-- **R.O.B.E.R.T** - DNS filtering with customizable toggles
-- **Static IP Addresses** - Available with pro plans
-
-### 🎨 **Personalization**
-- Custom sounds for connections
-- Custom wallpapers
-- Custom names for server locations
-- Location favorites
-- Newsfeed with promos and news
-
-### 📊 **Transparency**
-- Real-time IP address display
-- Connection status monitoring
-- Traffic statistics
-
----
-
-## 🏗️ Building from Source
-
-### Prerequisites
-
-Before you dive in, make sure you have these tools ready:
-
-```bash
-☐ Android Studio (Latest stable version)
-☐ Android SDK (API 21+)
-☐ Android NDK (for native code compilation)
-☐ CMake (for building native modules)
-☐ SWIG (for generating JNI bindings)
-☐ Git (obviously!)
+```powershell
+./xray/fetch-runtime.ps1
+$env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr'
+$env:ANDROID_HOME = 'C:/Users/your-name/AppData/Local/Android/Sdk'
+./gradlew.bat :mobile:assembleFdroidDebug -PabiFilter=arm64-v8a
+adb install -r mobile/build/outputs/apk/fdroid/debug/mobile-fdroid-debug.apk
+adb shell am start -n com.apexscribe.android/com.windscribe.mobile.ui.AppStartActivity
 ```
 
-### Quick Start
+Omit `abiFilter` for all bundled architectures. This provider build excludes the unsupported WireGuard native build. The original source modules remain available. Google/F-Droid billing and Windscribe account APIs are not used by the ApexGuard adapter.
 
-```bash
-# Clone the repository
-git clone https://github.com/Windscribe/Android-App.git
-cd androidapp
+The stock welcome buttons launch fresh provider-hosted browser login, registration, or Google sign-in. The callback exchanges its one-time code only at the validated gateway. AndroidKeyStore encrypts the access/refresh token pair; logout invalidates pending requests and removes local credentials. Account availability does not imply a Windscribe subscription or data quota.
 
-# Build debug version
-./gradlew assembleDebug
+Windscribe account editing/billing, upgrades, quotas, vouchers, referrals, R.O.B.E.R.T., static IPs, custom-profile tabs, IP rotation/pinning, news, emergency connection, support uploads, and service marketing links are hidden. Stale navigation/deep links cannot open those screens. Local themes, favorites, languages, network preferences, log viewing/export, and software-license attribution remain available. No replacement marketing copy or custom screens are introduced.
 
-# Or open in Android Studio and hit Run! 🎯
+## VPN and split tunneling
+
+The grant determines the actual protocol. An invalid or missing Xray link can use IKEv2 credentials from that same grant. Native startup alone does not report Connected: an HTTPS IP request must succeed through the VPN network.
+
+Both backends apply the existing inclusive/exclusive application preferences and retain the client UID for tunnel verification. Xray applies LAN bypass and excluded IP/domain routes. IKEv2 requires the provider certificate DN for single-label `net1.ch` gateways, with CA/signature checks enabled; other domains retain exact hostname certificate checks. IKEv2 uses server DNS; Xray sends default or plain custom DNS through VLESS. Encrypted custom DNS requires the upstream ctrld native engine and currently fails through the existing generic connection error in this provider build.
+
+Android app exclusions bypass the entire VPN, including its IP-family policy. Android's VPN API cannot impose a global IPv6 firewall on excluded apps. Destination exclusions use the stock Android 13+ route-exclusion API. These differ from the privileged desktop firewall.
+
+The include/exclude selector controls applications. IPs, IPv4 CIDRs, and hostnames always form a bypass list, including when an app is included. Hostnames use cached IPv4 addresses; unresolved entries add no bypass route until resolved, and a manual refresh updates the cache. Shared destination addresses can bypass other names on the same IP. There is no destination-inclusion or wildcard-domain mode. Reconnect after changing routing preferences. IKEv2 LAN bypass excludes private IPv4 ranges; Xray excludes directly connected networks and local discovery/broadcast routes.
+
+## Verification
+
+Run the focused tests and build the hardware test APK:
+
+```powershell
+./gradlew.bat :base:testFdroidDebugUnitTest --tests '*Apex*' --tests '*Xray*Test' --tests '*ProtectedDialerTest' --tests '*WindVpnControllerForceDisconnectTest' -PabiFilter=arm64-v8a
+./gradlew.bat :mobile:assembleFdroidDebugAndroidTest -PabiFilter=arm64-v8a
+adb install -r mobile/build/outputs/apk/androidTest/fdroid/debug/mobile-fdroid-debug-androidTest.apk
+adb shell am instrument -w -e class com.windscribe.mobile.ApexDeviceSmokeTest,com.windscribe.mobile.XrayNativeSmokeTest com.apexscribe.android.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-### Build Commands Cheat Sheet
+After signing in through the stock app and granting Android VPN permission, the opt-in live test uses a second app UID to measure real split routing. The probe has no launcher or UI and is excluded from normal builds:
 
-```bash
-# Debug Builds
-./gradlew assembleDebug              # Build debug APK
-./gradlew :mobile:assembleGoogleDebug   # Mobile app only
-./gradlew :tv:assembleGoogleDebug       # TV app only
-
-# Release Builds
-./gradlew assembleRelease            # Build release APK
-./gradlew bundleGoogleRelease        # Google Play AAB
-./gradlew bundleFdroidRelease        # F-Droid AAB
-
-# Testing
-./gradlew test                       # Unit tests
-./gradlew connectedAndroidTest       # Instrumented tests
-
-# Code Quality
-./gradlew ktlintCheck                # Check Kotlin style
-./gradlew ktlintFormat               # Auto-format Kotlin
-./gradlew dependencyCheckAnalyze     # Security analysis
-
-# Cleaning
-./gradlew clean                      # Fresh start!
+```powershell
+./gradlew.bat :networkprobe:assembleDebug -PincludeNetworkProbe=true
+adb install -r networkprobe/build/outputs/apk/debug/networkprobe-debug.apk
+adb shell am instrument -w -r -e class com.windscribe.mobile.ApexLiveTunnelTest -e runLiveTunnelTests true com.apexscribe.android.test/androidx.test.runner.AndroidJUnitRunner
+adb uninstall com.apexscribe.networkprobe
 ```
 
-### Installing & Running
+The default live test covers both protocols and five app routing modes. Add `-e routingCases extended` for 26 cases per protocol: application modes, IP, `/32`, `/24`, resolved hostnames combined with selected/unselected apps in both app modes, disabled split with saved exclusions, and uncached/stale/refreshed hostnames. Supplying `-e lanIp <private-address> -e lanPort <listening-port>` adds LAN bypass off/on, for 56 total cases across both protocols. Use a reachable TCP listener that echoes the probe's ASCII nonce line unchanged, including its newline. A TCP handshake alone cannot prove remote reachability through a TUN proxy. The HTTPS probe pins its tested IPv4 destination while preserving platform TLS verification and ordinary per-UID routing.
 
-#### Mobile App 📱
-```bash
-# Build and install
-./gradlew :mobile:assembleGoogleDebug
-$ANDROID_HOME/platform-tools/adb install -r mobile/build/outputs/apk/google/debug/mobile-google-debug.apk
+Each case checks the physical route separately and reconnects through the production controller. Tests restore preferences, remove only their inserted destination rows, disconnect, and restore screen wake behavior. Optional `protocols`, `modes`, and `cityId` arguments select a subset. Real credentials are entered only through hosted sign-in, never passed as test arguments.
 
-# Launch the app
-$ANDROID_HOME/platform-tools/adb shell am start -n com.windscribe.vpn/com.windscribe.mobile.ui.AppStartActivity
-```
+The connected Samsung SM-T725 runs Android 14. The debug APK builds and installs. All 49 focused provider/backend and navigation-policy JVM tests pass and run in CI. All four device smoke tests pass: stock activity startup, real provider HTTPS metadata, strongSwan native library loading, and the shipped Xray raw/gRPC core with authenticated loopback SOCKS startup and shutdown. Broader Windows runs retain two unchanged upstream failures: OpenVPN newline parsing and filename-separator tests assume Linux behavior.
 
-#### TV App 📺
-```bash
-# Build and install
-./gradlew :tv:assembleGoogleDebug
-$ANDROID_HOME/platform-tools/adb install -r tv/build/outputs/apk/google/debug/tv-google-debug.apk
+Hosted login and session persistence pass on the tablet. Both IKEv2 and Xray pass all 56 routing cases described above: 52 public-destination cases and four LAN cases using an independent nonce echo endpoint. Direct Xray → IKEv2 → Xray switching also passes. Each case verifies tunneled HTTPS traffic and a separate-UID probe; bypassed traffic must match the physical address, while tunneled traffic must differ. Provider exits may use different NAT addresses for different destinations. These are the supported routing equivalence classes on this Android 14 device; IPv6 traffic, other Android versions, arbitrary networks, and every possible application/destination list have not been exhaustively tested.
 
-# Launch the app
-$ANDROID_HOME/platform-tools/adb shell am start -n com.windscribe.vpn/com.windscribe.tv.splash.SplashActivity
-```
+## Source and licenses
 
----
-
-## 🏛️ Architecture
-
-### Module Structure (The Big Picture)
-
-```
-androidapp/
-├── 📦 base/              # Core functionality hub
-│   ├── api/             # API communication
-│   ├── backend/         # VPN protocol handlers
-│   ├── localdatabase/   # Room database
-│   ├── repository/      # Data layer
-│   └── services/        # Android services
-├── 📱 mobile/           # Phone/tablet UI (Jetpack Compose)
-├── 📺 tv/               # Android TV UI (XML layouts)
-├── 🔌 Protocol Modules
-│   ├── openvpn/        # OpenVPN implementation
-│   ├── strongswan/     # IKEv2/IPSec
-│   └── wgtunnel/       # WireGuard, WSTunnel, Stunnel & ControlD (All Go code compiled to single lib)
-├── 🌐 wsnet/           # Networking library
-└── 🧪 test/            # Shared test utilities
-```
-
-### Technology Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Language** | Kotlin (100% of app modules; vendored native VPN modules are C/C++/Go/Java) |
-| **UI** | Jetpack Compose (Mobile), XML (TV) |
-| **Async** | Coroutines + Kotlin Flows |
-| **DI** | Hilt |
-| **Database** | Room |
-| **Networking** | wsnet (custom library) |
-| **Background Tasks** | WorkManager |
-
-### Build Variants
-
-#### 🟢 Google Play (`google` flavor)
-- ✅ Google Play Billing
-- ✅ In-App Review API
-- ✅ Firebase Cloud Messaging
-- ✅ Full feature set
-
-#### 🟠 F-Droid (`fdroid` flavor)
-- ❌ No proprietary Google dependencies
-- ❌ No payment processing
-- ❌ No push notifications
-- ✅ 100% open source friendly
-
-**For detailed architecture documentation, see [AGENTS.md](AGENTS.md)**
-
----
-
-## 🎯 StrongSwan Setup
-
-Prebuilt binaries are included, but if you're feeling adventurous:
-
-1. Follow the [official StrongSwan Android build guide](https://wiki.strongswan.org/projects/strongswan/wiki/AndroidVPNClientBuild)
-2. Replace contents in `./strongswan/libs`
-3. Test thoroughly before committing! 🧪
-
----
-
-## 💻 Code Style
-
-### Kotlin (Preferred) ✨
-We use **ktlint** with default rules:
-
-```bash
-# Check your code
-./gradlew ktlintCheck
-
-# Auto-fix issues
-./gradlew ktlintFormat
-```
-
-### General Guidelines
-- ✅ Use Kotlin for all new code
-- ✅ Prefer coroutines over callbacks
-- ✅ Use Kotlin flows for reactive streams
-- ✅ Follow MVP pattern
-- ✅ Write meaningful commit messages
-- ✅ Test your changes!
-
----
-
-## 🤝 Contributing
-
-We ❤️ contributions! Here's how to get started:
-
-### The Golden Rules
-
-1. **Code Style is Sacred**
-  - Run `ktlintFormat` before committing
-  - Follow existing patterns
-  - Keep it clean and readable
-
-2. **Kotlin First, Always**
-  - The app modules (base/mobile/tv) are 100% Kotlin — keep them that way
-  - New code MUST be in Kotlin (no new Java files)
-  - Use coroutines and flows
-
-3. **Respect the Module Hierarchy**
-   ```
-   Feature Modules → base → UI Modules
-   ```
-   NO CIRCULAR DEPENDENCIES! 🚫
-
-4. **Test Your Changes**
-  - Write unit tests for business logic
-  - Add instrumented tests for UI
-  - Manual testing is also important!
-
-### Development Workflow
-
-```bash
-# 1. Create a feature branch
-git checkout -b feature/awesome-new-feature
-
-# 2. Make your changes
-# ... code code code ...
-
-# 3. Format and lint
-./gradlew ktlintFormat
-
-# 4. Run tests
-./gradlew test
-
-# 5. Commit with meaningful message
-git commit -m "feat: add awesome new feature"
-
-# 6. Push and create PR
-git push origin feature/awesome-new-feature
-```
-
-**For detailed development workflows, see [SKILL.md](SKILL.md)**
-
----
-
-## 🔢 Versioning
-
-Format: `[major].[minor].[build]`
-
-Example: `3.72.123`
-- **3** = Major version
-- **72** = Minor version
-- **123** = Build number
-
----
-
-## 📚 Additional Resources
-
-- **[AGENTS.md](AGENTS.md)** — AI-friendly architecture reference
-- **[SKILL.md](SKILL.md)** — Development workflows and operational guides
-- **[docs/](docs/)** — Comprehensive documentation
-  - [docs/architecture/](docs/architecture/) — Architecture deep-dives
-  - [docs/features/](docs/features/) — Feature-specific documentation
-  - [docs/guides/](docs/guides/) — How-to guides
-  - [docs/workflows/](docs/workflows/) — Process documentation
-- [Android Developer Docs](https://developer.android.com/)
-- [Kotlin Documentation](https://kotlinlang.org/docs/home.html)
-- [Jetpack Compose](https://developer.android.com/jetpack/compose)
-- [Coroutines Guide](https://kotlinlang.org/docs/coroutines-guide.html)
-- [Room Database](https://developer.android.com/training/data-storage/room)
-
----
-
-## 🆘 Getting Help
-
-- 💬 Check existing issues
-- 📧 Reach out to the team
-- 📝 Read the documentation
-- 🔍 Search the codebase for examples
-
----
-
-## 📄 License
-
-Copyright (c) 2021 Windscribe Limited
-
-All rights reserved. This project is proprietary software developed by Windscribe Limited.
-
----
-
-<div align="center">
-
-**Happy Coding! 🚀**
-
-*Made with ❤️ and lots of ☕*
-
-[⬆ Back to Top](#️-windscribe-vpn-for-android)
-
-</div>
+The [desktop ApexScribe project](https://github.com/neoyarus/ApexScribe) supplies the provider contract. [UPSTREAM.md](UPSTREAM.md) preserves the original mobile documentation. Retain [LICENSE.md](LICENSE.md) and third-party notices; native runtime notices are included in the APK assets. Build/signing credentials and account tokens stay outside source control.

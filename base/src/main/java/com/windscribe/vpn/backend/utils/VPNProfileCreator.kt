@@ -12,6 +12,7 @@ import com.google.gson.Gson
 import com.windscribe.common.DNSDetails
 import com.windscribe.common.DnsType
 import com.windscribe.common.getDNSDetails
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.api.response.ServerCredentialsResponse
 import com.windscribe.vpn.apppreference.PreferencesHelper
@@ -141,6 +142,7 @@ class VPNProfileCreator
             location: LastSelectedLocation,
             vpnParameters: VPNParameters,
             config: ProtocolInformation,
+            grantCredentials: Pair<String, String>? = null,
         ): String {
             logger.info("creating IKEv2 Profile.")
             // Vpn profile
@@ -148,12 +150,22 @@ class VPNProfileCreator
             profile.id = 1
             profile.uuid = UUID.randomUUID()
             profile.name = vpnParameters.hostName
-            // Changing it to use altered ip instead of hostname.
-            // profile.gateway = vpnParameters.hostName
-            profile.gateway = vpnParameters.ikev2Ip
-            profile.espProposal = "aes256gcm16-sha256-ecp384"
-            profile.ikeProposal = "aes256gcm16-sha256-ecp384"
-            profile.remoteId = vpnParameters.hostName
+            val grantIdentity =
+                grantCredentials?.let {
+                    ApexGuardIkev2Identity.constraint(vpnParameters.hostName, vpnParameters.ikev2Ip)
+                }
+            profile.gateway = grantIdentity?.gateway ?: vpnParameters.ikev2Ip
+            // Grant servers negotiate their own supported proposals; retain platform defaults.
+            if (grantCredentials == null) {
+                profile.espProposal = "aes256gcm16-sha256-ecp384"
+                profile.ikeProposal = "aes256gcm16-sha256-ecp384"
+            }
+            profile.remoteId = if (grantCredentials != null) grantIdentity?.remoteId else vpnParameters.hostName
+            if (grantCredentials != null) {
+                profile.localId = "ApexGuard"
+                profile.port = 500
+                profile.splitTunneling = VpnProfile.SPLIT_TUNNELING_BLOCK_IPV6
+            }
             profile.vpnType = VpnType.fromIdentifier("ikev2-eap")
             if (preferencesHelper.isKeepAliveModeAuto) {
                 profile.natKeepAlive = 20
@@ -168,7 +180,7 @@ class VPNProfileCreator
             if (!preferencesHelper.isPackageSizeModeAuto && preferencesHelper.packetSize != -1) {
                 profile.mtu = preferencesHelper.packetSize
             } else {
-                profile.mtu = 1300
+                profile.mtu = if (grantCredentials != null) 1400 else 1300
             }
             val dnsDetails = setCustomDNS()
             if (dnsDetails?.type == DnsType.Plain) {
@@ -205,8 +217,15 @@ class VPNProfileCreator
             }
 
             val apps: SortedSet<String> = TreeSet(preferencesHelper.installedApps)
+            if (grantCredentials != null && preferencesHelper.splitTunnelToggle) {
+                if (preferencesHelper.splitRoutingMode == PreferencesKeyConstants.INCLUSIVE_MODE) {
+                    apps.add(appContext.packageName)
+                } else {
+                    apps.remove(appContext.packageName)
+                }
+            }
             profile.setSelectedApps(apps)
-            val credentials = getIkev2Credentials()
+            val credentials = grantCredentials ?: getIkev2Credentials()
             profile.username = credentials.first
             profile.password = credentials.second
             saveSelectedLocation(location)
@@ -473,6 +492,12 @@ class VPNProfileCreator
         }
 
         private fun setCustomDNS(): DNSDetails? {
+            if (BuildConfig.APEXGUARD_ENABLED &&
+                preferencesHelper.dnsMode == DNS_MODE_CUSTOM &&
+                !Regex("""^\d{1,3}(?:\.\d{1,3}){3}$""").matches(preferencesHelper.dnsAddress.orEmpty())
+            ) {
+                throw InvalidVPNConfigException(CallResult.Error(ERROR_INVALID_DNS_ADDRESS, "Invalid DNS address"))
+            }
             val dnsDetails =
                 getDNSDetails(
                     appContext,
@@ -488,6 +513,9 @@ class VPNProfileCreator
                 )
             }
             return dnsDetails.getOrNull()?.let { details ->
+                if (BuildConfig.APEXGUARD_ENABLED && details.type == DnsType.Proxy) {
+                    throw InvalidVPNConfigException(CallResult.Error(ERROR_INVALID_DNS_ADDRESS, "Invalid DNS address"))
+                }
                 // Deliberately does not stamp a ctrld port here: this runs before ctrld selects the
                 // port it binds, so any value recorded now can be stale by the time the tunnel
                 // wrapper needs it. Consumers read the live port from the VPN service instead.

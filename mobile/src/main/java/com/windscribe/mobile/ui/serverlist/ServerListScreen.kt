@@ -30,6 +30,7 @@ import com.windscribe.mobile.ui.connection.ConnectionViewmodelImpl
 import com.windscribe.mobile.ui.home.HomeViewmodel
 import com.windscribe.mobile.ui.home.HomeViewmodelImpl
 import com.windscribe.mobile.ui.theme.serverListBackgroundColor
+import com.windscribe.vpn.BuildConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -47,7 +48,7 @@ fun ServerListScreen(
         rememberPagerState(
             initialPage = 0,
             initialPageOffsetFraction = 0.0f,
-            pageCount = { 4 },
+            pageCount = { if (BuildConfig.APEXGUARD_ENABLED) 2 else 4 },
         )
 
     val hapticFeedback by homeViewmodel.hapticFeedbackEnabled.collectAsState()
@@ -59,7 +60,7 @@ fun ServerListScreen(
      * ViewModel -> Pager (one-way, guarded)
      */
     LaunchedEffect(selectedType) {
-        val targetPage = selectedType.toPageIndex()
+        val targetPage = selectedType.toPageIndex().coerceAtMost(pagerState.pageCount - 1)
 
         if (pagerState.currentPage != targetPage) {
             if (hapticFeedback) {

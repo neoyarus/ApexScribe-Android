@@ -39,7 +39,9 @@ val featureList =
         FeatureItem(R.drawable.feature_secure, "Automatically Secure any Network"),
         FeatureItem(R.drawable.feature_logging, "Strict No-Logging Policy"),
         FeatureItem(R.drawable.feature_quick, "Works with Shortcuts & Quick Settings"),
-    )
+    ).filterIndexed { index, _ ->
+        !com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED || index == 1 || index == 3
+    }
 
 @Composable
 fun FeatureSection(modifier: Modifier = Modifier) {

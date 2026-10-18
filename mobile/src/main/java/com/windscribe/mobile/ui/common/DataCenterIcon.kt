@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.windscribe.mobile.R
 import com.windscribe.mobile.ui.serverlist.DataCenterSplitBorderCircle
 import com.windscribe.mobile.ui.theme.expandedServerItemTextColor
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.serverlist.entity.Datacenter
 import com.windscribe.vpn.serverlist.entity.DatacenterStatus
 import com.windscribe.vpn.serverlist.entity.DatacenterStatusHelper
@@ -28,7 +29,12 @@ fun DataCenterIcon(
     isPro: Boolean,
     hasAlcAccess: Boolean = false,
 ) {
-    val status = DatacenterStatusHelper.getStatus(city, serverCount, isPro, hasAlcAccess)
+    val status =
+        if (BuildConfig.APEXGUARD_ENABLED) {
+            if (city.status == 1) DatacenterStatus.Available else DatacenterStatus.UnderMaintenance
+        } else {
+            DatacenterStatusHelper.getStatus(city, serverCount, isPro, hasAlcAccess)
+        }
 
     when (status) {
         DatacenterStatus.UnderMaintenance -> {

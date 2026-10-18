@@ -4,28 +4,40 @@
 
 package com.windscribe.vpn.backend.ikev2
 
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.api.IApiCallManager
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.apppreference.PreferencesHelper
+import com.windscribe.vpn.apppreference.PreferencesKeyConstants
 import com.windscribe.vpn.autoconnection.ProtocolInformation
 import com.windscribe.vpn.backend.ProxyDNSManager
+import com.windscribe.vpn.backend.Util
 import com.windscribe.vpn.backend.VPNState
 import com.windscribe.vpn.backend.VPNState.Status.Connecting
 import com.windscribe.vpn.backend.VPNState.Status.Disconnected
 import com.windscribe.vpn.backend.VpnBackend
 import com.windscribe.vpn.backend.ikev2.StrongswanCertificateManager.init
+import com.windscribe.vpn.backend.utils.ApexGuardGrantStore
 import com.windscribe.vpn.commonutils.ResourceHelper
 import com.windscribe.vpn.localdatabase.LocalDbInterface
 import com.windscribe.vpn.repository.AdvanceParameterRepository
 import com.windscribe.vpn.state.NetworkInfoManager
 import com.windscribe.vpn.state.VPNConnectionStateManager
 import com.windscribe.vpn.wsnet.WSNetWrapper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.cancellable
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import org.strongswan.android.logic.CharonVpnService
 import org.strongswan.android.logic.StrongSwanApplication
 import java.io.File
@@ -48,6 +60,8 @@ class IKev2VpnBackend
         localDbInterface: LocalDbInterface,
         wsNetWrapper: WSNetWrapper,
         resourceHelper: ResourceHelper,
+        private val apexGuardService: ApexGuardService,
+        private val apexGrantStore: ApexGuardGrantStore,
     ) : VpnBackend(
             scope,
             vpnStateManager,
@@ -60,7 +74,10 @@ class IKev2VpnBackend
             resourceHelper,
         ) {
         var service: CharonVpnServiceWrapper? = null // Direct reference like WireGuard
+        private val serviceState = MutableStateFlow<CharonVpnServiceWrapper?>(null)
         private var connectionStateJob: Job? = null
+        private var startupJob: Job? = null
+        private val disconnectMutex = Mutex()
         override var active = false
 
         // StateFlow-based tunnel like WireGuard
@@ -74,6 +91,7 @@ class IKev2VpnBackend
         fun serviceCreated(charonVpnServiceWrapper: CharonVpnServiceWrapper) {
             vpnLogger.info("IKEv2 service created.")
             service = charonVpnServiceWrapper
+            serviceState.value = charonVpnServiceWrapper
             initStrongswan()
         }
 
@@ -86,13 +104,14 @@ class IKev2VpnBackend
             vpnLogger.info("Initializing StrongSwan for the first time.")
             StrongSwanApplication.setContext(appContext)
             StrongSwanApplication.setService(CharonVpnServiceWrapper::class.java)
-            init(appContext)
+            if (!BuildConfig.APEXGUARD_ENABLED) init(appContext)
             strongswanInitialized = true
         }
 
         fun serviceDestroyed() {
             vpnLogger.info("IKEv2 service destroyed.")
             service = null
+            serviceState.value = null
         }
 
         /**
@@ -101,6 +120,8 @@ class IKev2VpnBackend
         fun getTunnel() = ikev2Tunnel
 
         override fun activate() {
+            ikev2Tunnel.onStateChange(IKev2Tunnel.State.DOWN)
+            connectionStateJob?.cancel()
             stickyDisconnectEvent = true // Prevent initial DOWN from triggering disconnect
             vpnLogger.info("Activating IKEv2 backend.")
             // Start observing tunnel state changes (like WireGuard does)
@@ -112,8 +133,7 @@ class IKev2VpnBackend
                             IKev2Tunnel.State.DOWN -> {
                                 // Only disconnect if not the initial activation event and not reconnecting
                                 if (!stickyDisconnectEvent && !reconnecting) {
-                                    connectionJob?.cancel()
-                                    updateState(VPNState(Disconnected))
+                                    scope.launch { disconnect(VPNState.Error(VPNState.ErrorType.BrokenTunnel)) }
                                 }
                             }
 
@@ -152,68 +172,94 @@ class IKev2VpnBackend
             this.connectionId = connectionId
             vpnLogger.info("Connecting to IKEv2 Service.")
             startConnectionJob()
-            scope.launch {
-                try {
-                    proxyDNSManager.startControlDIfRequired()
-                } catch (e: Exception) {
-                    // Fail closed: without a confirmed DNS proxy this connection would leak or
-                    // blackhole every app's DNS. Surface it instead of connecting regardless.
-                    vpnLogger.error("DNS proxy failed to start. Aborting connection.", e)
-                    disconnect(
-                        VPNState.Error(
-                            error = VPNState.ErrorType.GenericError,
-                            message = "DNS proxy failed to start.",
-                            showError = true,
-                        ),
-                    )
-                    return@launch
-                }
-
-                // Start the CharonVpnServiceWrapper service (if not already started)
-                val context = appContext.applicationContext
-                val intent = android.content.Intent(context, CharonVpnServiceWrapper::class.java)
-
-                try {
-                    vpnLogger.info("Starting CharonVpnServiceWrapper service.")
-                    androidx.core.content.ContextCompat
-                        .startForegroundService(context, intent)
-
-                    // Give service time to start and call serviceCreated()
-                    delay(100)
-
-                    // Now trigger connection
-                    vpnLogger.info("Triggering connection via service.")
-                    service?.connect() ?: run {
-                        vpnLogger.error("Service is null after starting! Cannot connect.")
+            startupJob?.cancel()
+            startupJob =
+                scope.launch {
+                    try {
+                        proxyDNSManager.startControlDIfRequired()
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        // Fail closed: without a confirmed DNS proxy this connection would leak or
+                        // blackhole every app's DNS. Surface it instead of connecting regardless.
+                        vpnLogger.error("DNS proxy failed to start. Aborting connection.", e)
+                        disconnect(
+                            VPNState.Error(
+                                error = VPNState.ErrorType.GenericError,
+                                message = "DNS proxy failed to start.",
+                                showError = true,
+                            ),
+                        )
+                        return@launch
                     }
-                } catch (e: Exception) {
-                    vpnLogger.error("Failed to start CharonVpnServiceWrapper: ${e.message}")
+
+                    // Start the CharonVpnServiceWrapper service (if not already started)
+                    val context = appContext.applicationContext
+                    val intent =
+                        android.content.Intent(context, CharonVpnServiceWrapper::class.java).apply {
+                            action = CharonVpnServiceWrapper.CONNECT_ACTION
+                            putExtra(CharonVpnServiceWrapper.CONNECTION_ID, connectionId.toString())
+                        }
+
+                    try {
+                        vpnLogger.info("Starting CharonVpnServiceWrapper service.")
+                        androidx.core.content.ContextCompat
+                            .startForegroundService(context, intent)
+
+                        // onStartCommand receives CONNECT_ACTION after onCreate has initialized Charon.
+                        // The service installs the profile there, avoiding a fixed-delay startup race.
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        disconnect(VPNState.Error(VPNState.ErrorType.GenericError, showError = true))
+                    }
                 }
-            }
         }
 
-        override suspend fun disconnect(error: VPNState.Error?) {
-            this.error = error
-            if (proxyDNSManager.invalidConfig) {
-                proxyDNSManager.stopControlD()
+        override suspend fun disconnect(error: VPNState.Error?) =
+            disconnectMutex.withLock {
+                this.error = error
+                connectionStateJob?.cancel()
+                connectionStateJob = null
+                stopNetworkInfoObserver()
+                startupJob?.let { if (it != currentCoroutineContext()[Job]) it.cancel() }
+                startupJob = null
+                if (proxyDNSManager.invalidConfig) {
+                    proxyDNSManager.stopControlD()
+                }
+                // The timeout job can be the caller; cancelling it here would abort
+                // teardown at the next suspension before publishing Disconnected.
+                connectionJob?.let { if (it != currentCoroutineContext()[Job]) it.cancel() }
+                vpnLogger.info("Stopping IKEv2 service.")
+
+                // Stop the VPN tunnel by setting next profile to null
+                vpnLogger.info("Setting next profile to null to stop tunnel.")
+                service?.setNextProfile(null)
+
+                delay(20) // Short delay for profile to stop
+
+                // Then close the service cleanly (WireGuard's approach - no startForegroundService!)
+                vpnLogger.info("Closing CharonVpnServiceWrapper.")
+                service?.close()
+
+                appContext.stopService(android.content.Intent(appContext, CharonVpnServiceWrapper::class.java))
+                withTimeout(10_000) { serviceState.first { it == null } }
+                vpnLogger.info("Deactivating IKEv2 backend.")
+                if (BuildConfig.APEXGUARD_ENABLED) Util.clearProfile()
+                val retainGrant =
+                    preferencesHelper.connectionMode == PreferencesKeyConstants.CONNECTION_MODE_AUTO &&
+                        apexGrantStore.retainAfterFailure(error)
+                if (error?.error != VPNState.ErrorType.UserReconnect && !retainGrant) {
+                    apexGrantStore.clear()
+                    try {
+                        apexGuardService.disconnect()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        vpnLogger.warn("Remote VPN session cleanup failed")
+                    }
+                }
+                deactivate()
+                updateState(VPNState(Disconnected, error = error))
             }
-            connectionJob?.cancel()
-            vpnLogger.info("Stopping IKEv2 service.")
-
-            // Stop the VPN tunnel by setting next profile to null
-            vpnLogger.info("Setting next profile to null to stop tunnel.")
-            service?.setNextProfile(null)
-
-            delay(20) // Short delay for profile to stop
-
-            // Then close the service cleanly (WireGuard's approach - no startForegroundService!)
-            vpnLogger.info("Closing CharonVpnServiceWrapper.")
-            service?.close()
-
-            delay(DISCONNECT_DELAY)
-            vpnLogger.info("Deactivating IKEv2 backend.")
-            deactivate()
-        }
 
         private fun checkLogFileSize() {
             val logFile =

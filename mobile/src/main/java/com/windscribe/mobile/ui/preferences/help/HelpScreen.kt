@@ -47,6 +47,7 @@ import com.windscribe.mobile.ui.theme.font14
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.preferencesSubtitleColor
 import com.windscribe.mobile.ui.theme.primaryTextColor
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.constants.NetworkKeyConstants
 
@@ -82,31 +83,33 @@ fun HelpContent(
                 navController.popBackStack()
             }
             Spacer(modifier = Modifier.height(20.dp))
-            HelpItem(
-                R.string.knowledge_base,
-                R.string.knowledge_base_description,
-                com.windscribe.mobile.R.drawable.ic_apple,
-                Route.Web(NetworkKeyConstants.URL_KNOWLEDGE),
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            HelpItem(
-                R.string.talk_to_garry,
-                R.string.talk_to_garry_description,
-                com.windscribe.mobile.R.drawable.ic_garry,
-                Route.Web(NetworkKeyConstants.URL_GARRY),
-            )
-            if (isUserPro) {
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                HelpItem(
+                    R.string.knowledge_base,
+                    R.string.knowledge_base_description,
+                    com.windscribe.mobile.R.drawable.ic_apple,
+                    Route.Web(NetworkKeyConstants.URL_KNOWLEDGE),
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 HelpItem(
-                    R.string.contact_humans,
-                    R.string.contact_humans_description,
-                    com.windscribe.mobile.R.drawable.ic_ticket,
-                    Route.Nav(Screen.Ticket),
+                    R.string.talk_to_garry,
+                    R.string.talk_to_garry_description,
+                    com.windscribe.mobile.R.drawable.ic_garry,
+                    Route.Web(NetworkKeyConstants.URL_GARRY),
                 )
+                if (isUserPro) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HelpItem(
+                        R.string.contact_humans,
+                        R.string.contact_humans_description,
+                        com.windscribe.mobile.R.drawable.ic_ticket,
+                        Route.Nav(Screen.Ticket),
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                CommunitySupport()
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            CommunitySupport()
-            Spacer(modifier = Modifier.height(16.dp))
             HelpItem(
                 R.string.advance,
                 R.string.advance_description,
@@ -115,11 +118,13 @@ fun HelpContent(
             )
             Spacer(modifier = Modifier.height(16.dp))
             DebugView()
-            Spacer(modifier = Modifier.height(16.dp))
-            DebugSend(
-                state = sendLogState,
-                onSendLogClicked = onSendLogClicked,
-            )
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Spacer(modifier = Modifier.height(16.dp))
+                DebugSend(
+                    state = sendLogState,
+                    onSendLogClicked = onSendLogClicked,
+                )
+            }
         }
     }
 }

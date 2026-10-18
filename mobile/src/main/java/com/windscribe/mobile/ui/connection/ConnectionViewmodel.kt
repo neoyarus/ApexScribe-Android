@@ -717,7 +717,12 @@ class ConnectionViewmodelImpl
                     val user = userRepository.user.value
                     val isPro = user?.isPro ?: false
                     val hasAlcAccess = user?.hasAlcAccess(datacenterAndLocation.location?.countryCode) ?: false
-                    val status = DatacenterStatusHelper.getStatus(city, serverCount, isPro, hasAlcAccess)
+                    val status =
+                        if (user?.providerManaged == true) {
+                            if (city.status == 1) DatacenterStatus.Available else DatacenterStatus.UnderMaintenance
+                        } else {
+                            DatacenterStatusHelper.getStatus(city, serverCount, isPro, hasAlcAccess)
+                        }
                     when (status) {
                         DatacenterStatus.UnderMaintenance -> {
                             _goto.emit(HomeGoto.LocationMaintenance)

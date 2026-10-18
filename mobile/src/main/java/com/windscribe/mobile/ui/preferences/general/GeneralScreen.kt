@@ -127,14 +127,16 @@ fun GeneralContent(
                 selectedItemKey = selectedLanguage,
                 onSelect = actions.onLanguageSelected,
             )
-            Spacer(modifier = Modifier.height(14.dp))
-            SwitchItemView(
-                com.windscribe.vpn.R.string.show_location_health,
-                R.drawable.ic_location_load,
-                com.windscribe.vpn.R.string.location_load_description,
-                isLocationLoadEnabled,
-            ) {
-                actions.onLocationLoadClick()
+            if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                Spacer(modifier = Modifier.height(14.dp))
+                SwitchItemView(
+                    com.windscribe.vpn.R.string.show_location_health,
+                    R.drawable.ic_location_load,
+                    com.windscribe.vpn.R.string.location_load_description,
+                    isLocationLoadEnabled,
+                ) {
+                    actions.onLocationLoadClick()
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
             SwitchItemView(

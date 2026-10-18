@@ -34,6 +34,7 @@ android {
     }
     defaultConfig {
         minSdk = rootProject.extra["appMinSdk"] as Int
+        buildConfigField("boolean", "APEXGUARD_ENABLED", "true")
     }
     testOptions {
         targetSdk = rootProject.extra["appTargetSdk"] as Int
@@ -131,6 +132,8 @@ dependencies {
     "googleApi"("com.google.firebase:firebase-messaging:${libs.versions.firebase.get()}")
     "googleApi"(files("$projectDir/src/google/libs/in-app-purchasing-2.0.76.jar"))
     implementation(files("$projectDir/src/main/libs/wsnet.aar"))
+    implementation(files("../xray/libs/libv2ray.aar"))
+    implementation(files("../xray/libs/hev-socks5-tunnel.aar"))
     "googleApi"("com.android.billingclient:billing:9.0.0")
     "googleApi"("com.google.android.gms:play-services-appset:16.0.2")
     "googleApi"("com.google.android.play:review-ktx:2.0.2")

@@ -1,7 +1,8 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 extra["AppName"] = "Windscribe"
-extra["AppId"] = "com.windscribe.vpn"
-extra["appMinSdk"] = 24
+extra["apexguardBuild"] = true
+extra["AppId"] = "com.apexscribe.android"
+extra["appMinSdk"] = 29
 extra["appTargetSdk"] = 36
 extra["appCompiledSdk"] = 36
 extra["appBuildTool"] = "36.0.0"

@@ -51,6 +51,7 @@ class ProtocolConfig(
                 PROTO_STEALTH -> "Stealth"
                 PROTO_WS_TUNNEL -> "WStunnel"
                 PROTO_WIRE_GUARD -> "WireGuard"
+                "xray" -> "Xray"
                 else -> "IKEv2"
             }
         }

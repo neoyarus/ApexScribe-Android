@@ -29,6 +29,17 @@ class ConnectionDataRepository
         private val logger = LoggerFactory.getLogger("data")
 
         suspend fun update(): Boolean {
+            if (com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                return when (val result = result<PortMapResponse> { apiCallManager.getPortMap() }) {
+                    is CallResult.Success -> {
+                        saveSuggestedProtocolPort(result.data)
+                        preferencesHelper.portMap = Gson().toJson(result.data)
+                        preferencesHelper.portMapVersion = NetworkKeyConstants.PORT_MAP_VERSION
+                        true
+                    }
+                    is CallResult.Error -> false
+                }
+            }
             logger.debug("Starting connection data update...")
 
             val result =

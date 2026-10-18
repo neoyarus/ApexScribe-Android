@@ -42,6 +42,7 @@ import com.windscribe.mobile.ui.nav.LocalNavController
 import com.windscribe.mobile.ui.theme.AppColors
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.font24
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants
 import java.io.File
@@ -93,16 +94,18 @@ fun AllProtocolFailedDialogScreen() {
                 modifier = Modifier.padding(bottom = 8.dp),
             )
 
-            Text(
-                text = stringResource(com.windscribe.vpn.R.string.failed_network_alert),
-                style = font16,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier =
-                    Modifier
-                        .widthIn(max = 400.dp)
-                        .padding(bottom = 16.dp),
-            )
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Text(
+                    text = stringResource(com.windscribe.vpn.R.string.failed_network_alert),
+                    style = font16,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier =
+                        Modifier
+                            .widthIn(max = 400.dp)
+                            .padding(bottom = 16.dp),
+                )
+            }
             Spacer(modifier = Modifier.weight(1f))
             NextButton(
                 modifier = Modifier.width(400.dp),
@@ -110,13 +113,15 @@ fun AllProtocolFailedDialogScreen() {
                 enabled = true,
                 onClick = { exportLog(navController.context, navController) },
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            NextButton(
-                modifier = Modifier.width(400.dp),
-                text = stringResource(com.windscribe.vpn.R.string.contact_support),
-                enabled = true,
-                onClick = { contactSupport(navController.context, navController) },
-            )
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Spacer(modifier = Modifier.height(16.dp))
+                NextButton(
+                    modifier = Modifier.width(400.dp),
+                    text = stringResource(com.windscribe.vpn.R.string.contact_support),
+                    enabled = true,
+                    onClick = { contactSupport(navController.context, navController) },
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -146,7 +151,7 @@ fun contactSupport(
                 val fileUri: Uri =
                     FileProvider.getUriForFile(
                         context,
-                        "com.windscribe.vpn.provider",
+                        "${context.packageName}.provider",
                         logFile,
                     )
                 putExtra(Intent.EXTRA_STREAM, fileUri)
@@ -169,7 +174,7 @@ fun exportLog(
         val fileUri: Uri =
             FileProvider.getUriForFile(
                 context,
-                "com.windscribe.vpn.provider",
+                "${context.packageName}.provider",
                 logFile,
             )
         val shareIntent =

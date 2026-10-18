@@ -13,7 +13,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.windscribe.mobile.ui.AppStartActivity
 import com.windscribe.mobile.ui.AppStartActivityViewModel
@@ -65,6 +64,7 @@ import com.windscribe.mobile.ui.preferences.split_tunnel.SplitTunnelScreen
 import com.windscribe.mobile.ui.preferences.ticket.TicketScreen
 import com.windscribe.mobile.ui.upgrade.UpgradeScreen
 import com.windscribe.mobile.ui.upgrade.UpgradeSuccessScreen
+import com.windscribe.vpn.BuildConfig
 
 val LocalNavController =
     staticCompositionLocalOf<NavController> {
@@ -96,7 +96,9 @@ fun NavigationStack(startDestination: Screen) {
     val pendingDeepLink by activity.viewmodel.pendingDeepLinkRoute.collectAsState()
     LaunchedEffect(pendingDeepLink) {
         pendingDeepLink?.let { route ->
-            navController.navigate(route)
+            if (ApexNavigationPolicy.isAllowed(route, BuildConfig.APEXGUARD_ENABLED)) {
+                navController.navigate(route)
+            }
             activity.viewmodel.clearPendingDeepLink()
         }
     }
@@ -108,25 +110,25 @@ fun NavigationStack(startDestination: Screen) {
 }
 
 private fun NavGraphBuilder.addNavigationScreens() {
-    composable(route = Screen.Start.route) {
+    guardedComposable(route = Screen.Start.route) {
         AppStartScreen()
     }
-    composable(route = Screen.Login.route) {
+    guardedComposable(route = Screen.Login.route) {
         LoginScreen()
     }
-    composable(route = Screen.Signup.route) {
+    guardedComposable(route = Screen.Signup.route) {
         SignupScreen()
     }
-    composable(route = Screen.TwoFactor.route) {
+    guardedComposable(route = Screen.TwoFactor.route) {
         TwoFactorScreen()
     }
-    composable(route = Screen.EmergencyConnect.route) {
+    guardedComposable(route = Screen.EmergencyConnect.route) {
         EmergencyConnectScreen()
     }
-    composable(route = Screen.Home.route) {
+    guardedComposable(route = Screen.Home.route) {
         HomeScreen()
     }
-    composable(route = Screen.NoEmailAttention.route) {
+    guardedComposable(route = Screen.NoEmailAttention.route) {
         NoEmailAttentionScreen(false) {}
     }
 
@@ -163,7 +165,7 @@ private fun NavGraphBuilder.addNavigationScreens() {
     slidingComposable(route = Screen.About.route) {
         AboutScreen()
     }
-    composable(route = Screen.PowerWhitelist.route) {
+    guardedComposable(route = Screen.PowerWhitelist.route) {
         PowerWhitelistScreen()
     }
     slidingComposable(route = Screen.Ticket.route) {
@@ -190,53 +192,53 @@ private fun NavGraphBuilder.addNavigationScreens() {
     slidingComposable(route = Screen.CustomIcon.route) {
         CustomIconsScreen()
     }
-    composable(route = Screen.ShareLink.route) {
+    guardedComposable(route = Screen.ShareLink.route) {
         ShareLinkScreen()
     }
-    composable(route = Screen.AccountStatus.route) {
+    guardedComposable(route = Screen.AccountStatus.route) {
         val data = navArgs()?.get<AccountStatusDialogData>("accountStatusDialogData")
         data?.let { AccountStatusScreen(it) }
     }
-    composable(route = Screen.LocationUnderMaintenance.route) {
+    guardedComposable(route = Screen.LocationUnderMaintenance.route) {
         LocationUnderMaintenanceScreen()
     }
-    composable(route = Screen.ConnectionChange.route) {
+    guardedComposable(route = Screen.ConnectionChange.route) {
         ConnectionChangeScreen(appStartActivityViewModel = appStartViewModel(), false)
     }
-    composable(route = Screen.ConnectionFailure.route) {
+    guardedComposable(route = Screen.ConnectionFailure.route) {
         ConnectionChangeScreen(appStartActivityViewModel = appStartViewModel(), true)
     }
-    composable(route = Screen.SetupPreferredProtocol.route) {
+    guardedComposable(route = Screen.SetupPreferredProtocol.route) {
         SetupPreferredProtocolScreen(appStartActivityViewModel = appStartViewModel())
     }
-    composable(route = Screen.DebugLogSent.route) {
+    guardedComposable(route = Screen.DebugLogSent.route) {
         DebugLogSentScreen(appStartActivityViewModel = appStartViewModel())
     }
-    composable(route = Screen.AllProtocolFailed.route) {
+    guardedComposable(route = Screen.AllProtocolFailed.route) {
         AllProtocolFailedScreen(appStartActivityViewModel = appStartViewModel())
     }
-    composable(route = Screen.ManualModeFailed.route) {
+    guardedComposable(route = Screen.ManualModeFailed.route) {
         ManualModeFailedScreen(appStartActivityViewModel = appStartViewModel())
     }
-    composable(route = Screen.OverlayDialog.route) {
+    guardedComposable(route = Screen.OverlayDialog.route) {
         OverlayDialogScreen(appStartActivityViewModel = appStartViewModel())
     }
-    composable(route = Screen.AllProtocolFailedDialog.route) {
+    guardedComposable(route = Screen.AllProtocolFailedDialog.route) {
         AllProtocolFailedDialogScreen()
     }
-    composable(route = Screen.ExtraDataUseWarning.route) {
+    guardedComposable(route = Screen.ExtraDataUseWarning.route) {
         ExtraDataUseWarningScreen(appStartViewModel())
     }
-    composable(route = Screen.GpsSpoofing.route) {
+    guardedComposable(route = Screen.GpsSpoofing.route) {
         GpsSpoofing(appStartViewModel())
     }
-    composable(route = Screen.AddEmail.route) {
+    guardedComposable(route = Screen.AddEmail.route) {
         AddEmailScreen()
     }
-    composable(route = Screen.ConfirmEmail.route) {
+    guardedComposable(route = Screen.ConfirmEmail.route) {
         ConfirmEmailScreen()
     }
-    composable(route = Screen.IpActionResult.route) {
+    guardedComposable(route = Screen.IpActionResult.route) {
         val savedStateHandle = navArgs()
         val message = savedStateHandle?.get<String>("message")
         val description = savedStateHandle?.get<String>("description")
@@ -244,21 +246,21 @@ private fun NavGraphBuilder.addNavigationScreens() {
             IpActionResultDialog(message, description)
         }
     }
-    composable(route = Screen.UpdateAvailable.route) {
+    guardedComposable(route = Screen.UpdateAvailable.route) {
         val savedStateHandle = navArgs()
         val latestVersion = savedStateHandle?.get<String?>("latest_version")
         val force = savedStateHandle?.get<Boolean>("force_upgrade") ?: false
         UpdateAvailableScreen(latestVersion, force)
     }
-    composable(route = Screen.Upgrade.route) {
+    guardedComposable(route = Screen.Upgrade.route) {
         UpgradeScreen()
     }
-    composable(route = Screen.UpgradeSuccess.route) {
+    guardedComposable(route = Screen.UpgradeSuccess.route) {
         val savedStateHandle = navArgs()
         val isGhostAccount = savedStateHandle?.get<Boolean>("isGhostAccount") ?: false
         UpgradeSuccessScreen(isGhostAccount)
     }
-    composable(route = Screen.EditCustomConfig.route) {
+    guardedComposable(route = Screen.EditCustomConfig.route) {
         val viewModel: EditCustomConfigViewmodel = hiltViewModel<EditCustomConfigViewmodelImpl>()
         val savedStateHandle = navArgs()
         val id = savedStateHandle?.get<Int>("config_id")

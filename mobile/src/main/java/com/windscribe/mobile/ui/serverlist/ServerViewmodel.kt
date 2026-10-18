@@ -2,6 +2,7 @@ package com.windscribe.mobile.ui.serverlist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants.AZ_LIST_SELECTION_MODE
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants.LATENCY_LIST_SELECTION_MODE
@@ -181,8 +182,8 @@ class ServerViewModelImpl
                 when (preferencesHelper.lastSelectedTabIndex) {
                     0 -> ServerListType.All
                     1 -> ServerListType.Fav
-                    2 -> ServerListType.Static
-                    3 -> ServerListType.Config
+                    2 -> if (BuildConfig.APEXGUARD_ENABLED) ServerListType.All else ServerListType.Static
+                    3 -> if (BuildConfig.APEXGUARD_ENABLED) ServerListType.All else ServerListType.Config
                     else -> ServerListType.All
                 },
             )
@@ -492,6 +493,9 @@ class ServerViewModelImpl
         }
 
         override fun setSelectedType(type: ServerListType) {
+            if (BuildConfig.APEXGUARD_ENABLED && type != ServerListType.All && type != ServerListType.Fav) {
+                return
+            }
             preferencesHelper.lastSelectedTabIndex =
                 when (type) {
                     ServerListType.All -> 0

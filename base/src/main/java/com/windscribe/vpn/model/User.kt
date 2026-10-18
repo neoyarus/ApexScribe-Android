@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit
 class User(
     private val sessionResponse: UserSessionResponse,
 ) {
+    val providerManaged: Boolean get() = sessionResponse.providerManaged
+
     val alcList: String?
         get() {
             val alcListString = StringBuilder()

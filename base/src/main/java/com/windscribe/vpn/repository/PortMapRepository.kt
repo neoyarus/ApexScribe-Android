@@ -1,6 +1,7 @@
 package com.windscribe.vpn.repository
 
 import com.google.gson.Gson
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.api.IApiCallManager
@@ -27,6 +28,8 @@ class PortMapRepository
         private var cachedPortMap: PortMapResponse? = null
 
         suspend fun getPortMap(): Result<PortMapResponse> {
+            // Fork protocol capabilities come from its adapter, including after a stock restore.
+            if (BuildConfig.APEXGUARD_ENABLED) return getPortMapFromApi()
             // Return cached if available
             cachedPortMap?.let { return Result.success(it) }
 

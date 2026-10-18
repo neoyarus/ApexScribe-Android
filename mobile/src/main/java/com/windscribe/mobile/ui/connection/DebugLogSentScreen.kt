@@ -30,6 +30,7 @@ import com.windscribe.mobile.ui.helper.PreviewWithNav
 import com.windscribe.mobile.ui.nav.LocalNavController
 import com.windscribe.mobile.ui.theme.AppColors
 import com.windscribe.mobile.ui.theme.font16
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.constants.NetworkKeyConstants
 
 /**
@@ -81,28 +82,30 @@ fun DebugLogSentContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_green_check_with_background),
-                contentDescription = null,
-                modifier =
-                    Modifier
-                        .size(100.dp)
-                        .padding(top = 8.dp),
-            )
-            Text(
-                text =
-                    stringResource(
-                        com.windscribe.vpn.R.string
-                            .your_debug_log_has_been_received_please_contact_support_if_you_want_assistance_with_this_issue,
-                    ),
-                style = font16,
-                color = AppColors.white,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 24.dp),
-            )
-            Spacer(modifier = Modifier.padding(top = 24.dp))
-            NextButton(Modifier, text = stringResource(com.windscribe.vpn.R.string.contact_support), true) {
-                onContactSupportClick()
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_green_check_with_background),
+                    contentDescription = null,
+                    modifier =
+                        Modifier
+                            .size(100.dp)
+                            .padding(top = 8.dp),
+                )
+                Text(
+                    text =
+                        stringResource(
+                            com.windscribe.vpn.R.string
+                                .your_debug_log_has_been_received_please_contact_support_if_you_want_assistance_with_this_issue,
+                        ),
+                    style = font16,
+                    color = AppColors.white,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 24.dp),
+                )
+                Spacer(modifier = Modifier.padding(top = 24.dp))
+                NextButton(Modifier, text = stringResource(com.windscribe.vpn.R.string.contact_support), true) {
+                    onContactSupportClick()
+                }
             }
             TextButton(onClick = onCancelClick) {
                 Text(

@@ -265,6 +265,10 @@ class ConnectionViewModelImpl
         }
 
         private fun buildProtocolInfo() {
+            if (portMapItems.isEmpty()) return
+            if (portMapItems.none { it.protoItem.proto == preferencesHelper.savedProtocol }) {
+                preferencesHelper.savedProtocol = portMapItems.first().protoItem.proto
+            }
             portMapItems
                 .map {
                     DropDownStringItem(it.protoItem.proto, it.protoItem.heading)
@@ -376,6 +380,16 @@ class ConnectionViewModelImpl
 
         override fun saveCustomDNSAddress() {
             if (preferencesHelper.dnsAddress == _customDnsAddress.value) return
+            if (com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED &&
+                !com.windscribe.vpn.api.apexguard.ApexContracts
+                    .ipv4(_customDnsAddress.value)
+            ) {
+                viewModelScope.launch {
+                    _toastMessage.emit(ToastMessage.Localized(com.windscribe.vpn.R.string.enter_valid_ip_or_url))
+                    _customDnsAddress.emit(preferencesHelper.dnsAddress.orEmpty())
+                }
+                return
+            }
             preferencesHelper.dnsAddress = _customDnsAddress.value
             proxyDNSManager.invalidConfig = true
             if (!vpnManagerStateManager.isVPNConnected()) {

@@ -75,6 +75,7 @@ import com.windscribe.mobile.ui.theme.font9
 import com.windscribe.mobile.ui.theme.isDark
 import com.windscribe.mobile.ui.theme.serverItemTextColor
 import com.windscribe.mobile.ui.theme.serverListSecondaryColor
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.commonutils.FlagIconResource
 import com.windscribe.vpn.serverlist.entity.Datacenter
 import com.windscribe.vpn.serverlist.entity.DatacenterStatus
@@ -157,6 +158,7 @@ fun AllServerList(
 
 @Composable
 fun UpgradeBar(viewModel: HomeViewmodel) {
+    if (BuildConfig.APEXGUARD_ENABLED) return
     val navController = LocalNavController.current
     val userState by viewModel.userState.collectAsState()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
@@ -305,7 +307,7 @@ fun LocationSplitBorderCircle(
         )
         Canvas(modifier = Modifier.size(24.dp)) {
             val strokeWidth = 1.dp.toPx()
-            if (angle == 0f || !showLocationLoad) return@Canvas
+            if (BuildConfig.APEXGUARD_ENABLED || angle == 0f || !showLocationLoad) return@Canvas
             drawArc(
                 color = color,
                 startAngle = latencyArcStart, // Start from top
@@ -326,7 +328,7 @@ fun LocationSplitBorderCircle(
                 topLeft = Offset.Zero,
             )
         }
-        if (showProIcon) {
+        if (!BuildConfig.APEXGUARD_ENABLED && showProIcon) {
             Image(
                 painter = painterResource(if (MaterialTheme.colorScheme.isDark) R.drawable.pro_mask else R.drawable.pro_mask_light),
                 contentDescription = "Flag",
@@ -362,7 +364,7 @@ fun DataCenterSplitBorderCircle(
             colorFilter = if (needsColorFilter) ColorFilter.tint(MaterialTheme.colorScheme.expandedServerItemTextColor) else null,
         )
 
-        if (showLocationLoad && angle > 0f) {
+        if (!BuildConfig.APEXGUARD_ENABLED && showLocationLoad && angle > 0f) {
             Canvas(modifier = Modifier.size(24.dp)) {
                 val strokePx = strokeWidth.toPx()
                 val canvasSize = Size(size.width, size.height)
@@ -388,7 +390,7 @@ fun DataCenterSplitBorderCircle(
             }
         }
 
-        if (showProIcon) {
+        if (!BuildConfig.APEXGUARD_ENABLED && showProIcon) {
             Image(
                 painter = painterResource(if (MaterialTheme.colorScheme.isDark) R.drawable.pro_mask else R.drawable.pro_mask_light),
                 contentDescription = null,

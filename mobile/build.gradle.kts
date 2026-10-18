@@ -33,6 +33,7 @@ android {
 
     compileSdk = rootProject.extra["appCompiledSdk"] as Int
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = rootProject.extra["AppId"] as String
         minSdk = rootProject.extra["appMinSdk"] as Int
         targetSdk = rootProject.extra["appTargetSdk"] as Int
@@ -142,6 +143,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("junit:junit:${libs.versions.junit.get()}")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
     implementation("androidx.navigation:navigation-compose:${libs.versions.navigation.get()}")
     implementation("androidx.compose.material3.adaptive:adaptive:1.2.0")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")

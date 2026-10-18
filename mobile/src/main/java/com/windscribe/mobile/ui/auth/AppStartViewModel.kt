@@ -1,28 +1,25 @@
 package com.windscribe.mobile.ui.auth
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.windscribe.vpn.api.IApiCallManager
-import com.windscribe.vpn.api.response.SsoResponse
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.backend.VPNState.Status.Connected
-import com.windscribe.vpn.commonutils.Ext.result
-import com.windscribe.vpn.installer.AppInstallerDetector
-import com.windscribe.vpn.repository.CallResult
 import com.windscribe.vpn.repository.UserDataState
 import com.windscribe.vpn.repository.UserRepository
-import com.windscribe.vpn.services.FirebaseManager
-import com.windscribe.vpn.services.sso.GoogleSignInManager
 import com.windscribe.vpn.state.VPNConnectionStateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 sealed class SsoLoginState {
@@ -51,145 +48,88 @@ abstract class AppStartViewModel : ViewModel() {
     abstract fun clearLoginState()
 
     abstract fun onSignIntentLaunch()
+
+    abstract fun beginHostedLogin(kind: String)
 }
 
 @HiltViewModel
 class AppStartViewModelImpl
     @Inject
     constructor(
+        @ApplicationContext private val context: Context,
         private val preferencesHelper: PreferencesHelper,
-        private val api: IApiCallManager,
         private val vpnConnectionStateManager: VPNConnectionStateManager,
-        private val googleSignInManager: GoogleSignInManager,
-        private val firebaseManager: FirebaseManager,
         private val userRepository: UserRepository,
-        private val playIntegrityManager: com.windscribe.vpn.backend.PlayIntegrityManager,
-        private val appInstallerDetector: AppInstallerDetector,
+        private val service: ApexGuardService,
     ) : AppStartViewModel() {
         private val _isConnected = MutableStateFlow(false)
         override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
-        override val loggedIn = preferencesHelper.sessionHash != null
-        override val signInIntent = googleSignInManager.getSignInIntent()
-        private val logger = LoggerFactory.getLogger("AppStartViewModel")
+        override val loggedIn: Boolean = service.authenticated.value && preferencesHelper.sessionHash != null
+        override val signInIntent: Intent? = null
         private val _loginState = MutableStateFlow<SsoLoginState>(SsoLoginState.Idle)
-        override val loginState: StateFlow<SsoLoginState> = _loginState
+        private var prepareAfterLogin = !service.authenticated.value
+        override val loginState: StateFlow<SsoLoginState> = _loginState.asStateFlow()
 
         init {
-            observeConnectionState()
-        }
-
-        override fun onSignIntentResult(data: Intent?) {
-            _loginState.value = SsoLoginState.LoggingIn("Logging in")
-            if (data == null) {
-                logger.error("Received empty sign in intent.")
-                updateState(SsoLoginState.Error("Sso login failed."))
-                return
+            viewModelScope.launch {
+                vpnConnectionStateManager.state.collect { _isConnected.value = it.status == Connected }
             }
             viewModelScope.launch {
-                googleSignInManager.getToken(data) { token, error ->
-                    if (token != null) {
-                        logger.debug("Received sso token from Google")
-                        ssoLogin(token = token)
-                    } else if (error != null) {
-                        logger.debug("Failed to get sso token from google: $error")
-                        logger.debug(error)
-                        updateState(SsoLoginState.Error(error))
-                    } else {
-                        logger.error("Failed to get sso token from google.")
-                        updateState(SsoLoginState.Error("Failed to get token."))
+                service.authenticated.collect { authenticated ->
+                    if (authenticated && prepareAfterLogin) {
+                        prepareAfterLogin = false
+                        preferencesHelper.sessionHash = ApexGuardService.SESSION_MARKER
+                        prepareDashboard()
                     }
                 }
             }
-        }
-
-        private fun ssoLogin(token: String) {
             viewModelScope.launch {
-                // Request Play Integrity token for device attestation
-                val integrityToken = playIntegrityManager.requestIntegrityToken()
-                if (integrityToken != null) {
-                    logger.debug("Using Play Integrity token for SSO login")
-                }
-                when (
-                    val result =
-                        result<SsoResponse> {
-                            api.sso(
-                                "google",
-                                token,
-                                integrityToken,
-                                appInstallerDetector.getInstallerPackageName(),
-                            )
-                        }
-                ) {
-                    is CallResult.Error -> {
-                        logger.error("Sso login failed with error: ${result.errorMessage}")
-                        updateState(SsoLoginState.Error(result.errorMessage))
-                    }
-
-                    is CallResult.Success -> {
-                        logger.info("Sso login successful")
-                        handleSuccessfulSsoLogin(result.data.sessionAuth)
+                service.loginFailed.collect {
+                    if (it) {
+                        _loginState.value =
+                            SsoLoginState.Error(context.getString(com.windscribe.vpn.R.string.no_internet))
                     }
                 }
             }
         }
 
-        private fun handleSuccessfulSsoLogin(sessionAuthHash: String) {
-            preferencesHelper.sessionHash = sessionAuthHash
-            preferencesHelper.isSsoLogin = true
-            firebaseManager.getFirebaseToken { firebaseToken ->
-                viewModelScope.launch(Dispatchers.IO) {
-                    userRepository.prepareDashboard(firebaseToken).collect {
+        override fun beginHostedLogin(kind: String) {
+            if (_loginState.value is SsoLoginState.LoggingIn) return
+            viewModelScope.launch {
+                _loginState.value = SsoLoginState.LoggingIn("Logging in")
+                try {
+                    if (service.authenticated.value) {
+                        prepareDashboard()
+                        return@launch
+                    }
+                    val url = withContext(Dispatchers.IO) { service.beginLogin(kind) }
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    _loginState.value = SsoLoginState.Idle
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    _loginState.value = SsoLoginState.Error(context.getString(com.windscribe.vpn.R.string.no_internet))
+                }
+            }
+        }
+
+        override fun onSignIntentLaunch() = beginHostedLogin("google")
+
+        private suspend fun prepareDashboard() =
+            withContext(Dispatchers.IO) {
+                userRepository.prepareDashboard(null).collect {
+                    _loginState.value =
                         when (it) {
-                            is UserDataState.Error -> {
-                                logger.error("Prepare dashboard failed with error: ${it.error}")
-                                updateState(SsoLoginState.Error(it.error))
-                            }
-
-                            is UserDataState.Loading -> {
-                                updateState(SsoLoginState.LoggingIn(it.status))
-                            }
-
-                            is UserDataState.Success -> {
-                                logger.info("Prepare dashboard successful.")
-                                updateState(SsoLoginState.Success)
-                            }
+                            is UserDataState.Success -> SsoLoginState.Success
+                            is UserDataState.Loading -> SsoLoginState.LoggingIn(it.status)
+                            is UserDataState.Error -> SsoLoginState.Error(context.getString(com.windscribe.vpn.R.string.no_internet))
                         }
-                    }
                 }
             }
-        }
 
-        private fun updateState(state: SsoLoginState) {
-            viewModelScope.launch {
-                _loginState.emit(state)
-            }
-        }
+        override fun onSignIntentResult(data: Intent?) = Unit
 
         override fun clearLoginState() {
-            viewModelScope.launch {
-                _loginState.emit(SsoLoginState.Idle)
-            }
-        }
-
-        private fun observeConnectionState() {
-            viewModelScope.launch {
-                vpnConnectionStateManager.state.collectLatest {
-                    when (it.status) {
-                        Connected -> {
-                            _isConnected.emit(true)
-                        }
-
-                        else -> {
-                            _isConnected.emit(false)
-                        }
-                    }
-                }
-            }
-        }
-
-        override fun onSignIntentLaunch() {
-            viewModelScope.launch {
-                _loginState.emit(SsoLoginState.LoggingIn("Logging in"))
-            }
+            _loginState.value = SsoLoginState.Idle
         }
     }

@@ -5,9 +5,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.LocalActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.window.core.layout.WindowSizeClass
 import com.windscribe.mobile.R
-import com.windscribe.mobile.ui.AppStartActivity
 import com.windscribe.mobile.ui.common.AppProgressBar
 import com.windscribe.mobile.ui.helper.MultiDevicePreview
 import com.windscribe.mobile.ui.helper.PreviewWithNav
@@ -72,6 +68,8 @@ import com.windscribe.mobile.ui.theme.font18
 class AppStartActions(
     val onSignIntentLaunch: () -> Unit = {},
     val onSignIntentResult: (Intent?) -> Unit = {},
+    val onLoginClick: () -> Unit = {},
+    val onSignupClick: () -> Unit = {},
 )
 
 /**
@@ -123,6 +121,8 @@ fun AppStartScreen(
             AppStartActions(
                 onSignIntentLaunch = viewModel::onSignIntentLaunch,
                 onSignIntentResult = viewModel::onSignIntentResult,
+                onLoginClick = { viewModel.beginHostedLogin("auth") },
+                onSignupClick = { viewModel.beginHostedLogin("register") },
             ),
     )
 }
@@ -269,26 +269,9 @@ private fun GoogleButton(
     actions: AppStartActions,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val launcher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.StartActivityForResult(),
-        ) { result ->
-            Log.i("AppStartViewModel", "result: ${result.data}")
-            actions.onSignIntentResult(result.data)
-        }
-    val activity = LocalActivity.current as? AppStartActivity
     Button(
         onClick = {
-            if (com.windscribe.mobile.BuildConfig.FLAVOR == "google") {
-                if (signInIntent == null) {
-                    Toast.makeText(activity, "Google Signin not available.", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                actions.onSignIntentLaunch()
-                launcher.launch(signInIntent)
-            } else {
-                Toast.makeText(activity, "Google Sign-in not available in F-Droid version", Toast.LENGTH_SHORT).show()
-            }
+            actions.onSignIntentLaunch()
         },
         Modifier
             .height(48.dp)
@@ -320,13 +303,12 @@ private fun GoogleButton(
 }
 
 @Composable
-private fun LoginButton() {
+private fun LoginButton(actions: AppStartActions) {
     val navController = LocalNavController.current
     val interactionSource = remember { MutableInteractionSource() }
     Button(
         onClick = {
-            navController.currentBackStackEntry?.savedStateHandle?.set("isAccountClaim", false)
-            navController.navigate(Screen.Login.route)
+            actions.onLoginClick()
         },
         Modifier
             .testTag("welcome_login_button")
@@ -371,7 +353,7 @@ fun EmergencyConnectButton(isConnected: Boolean) {
 }
 
 @Composable
-private fun SignupButton() {
+private fun SignupButton(actions: AppStartActions) {
     val navController = LocalNavController.current
     Text(
         text = stringResource(com.windscribe.vpn.R.string.text_sign_up),
@@ -379,7 +361,7 @@ private fun SignupButton() {
         color = Color(0xFF838D9B),
         modifier =
             Modifier.clickable {
-                navController.navigate(Screen.Signup.route)
+                actions.onSignupClick()
             },
     )
 }
@@ -400,11 +382,13 @@ fun ActionSection(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         GoogleButton(signInIntent, actions)
-        LoginButton()
+        LoginButton(actions)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            EmergencyConnectButton(isConnected)
+            if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                EmergencyConnectButton(isConnected)
+            }
             Spacer(modifier = Modifier.weight(1f))
-            SignupButton()
+            SignupButton(actions)
             Spacer(modifier = Modifier.width(8.dp))
         }
     }

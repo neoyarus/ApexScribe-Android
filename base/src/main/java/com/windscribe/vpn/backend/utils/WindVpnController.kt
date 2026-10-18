@@ -8,9 +8,11 @@ import android.app.ActivityManager
 import android.content.Context.ACTIVITY_SERVICE
 import android.content.Intent
 import android.net.VpnService
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.Windscribe.Companion.appContext
 import com.windscribe.vpn.alert.showRetryDialog
+import com.windscribe.vpn.api.apexguard.ApexGuardService
 import com.windscribe.vpn.apppreference.PreferencesHelper
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants
 import com.windscribe.vpn.apppreference.PreferencesKeyConstants.PROTO_IKev2
@@ -27,6 +29,7 @@ import com.windscribe.vpn.backend.VpnBackendHolder
 import com.windscribe.vpn.backend.openvpn.WindStunnelUtility
 import com.windscribe.vpn.backend.utils.SelectedLocationType.CityLocation
 import com.windscribe.vpn.backend.utils.SelectedLocationType.StaticIp
+import com.windscribe.vpn.backend.xray.XrayTunnelConfig
 import com.windscribe.vpn.commonutils.WindUtilities
 import com.windscribe.vpn.constants.NetworkErrorCodes.ERROR_INVALID_DNS_ADDRESS
 import com.windscribe.vpn.constants.NetworkErrorCodes.ERROR_UNABLE_TO_REACH_API
@@ -51,12 +54,16 @@ import com.windscribe.vpn.services.startAutoConnectService
 import com.windscribe.vpn.state.DeviceStateManager
 import com.windscribe.vpn.state.VPNConnectionStateManager
 import dagger.Lazy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -78,8 +85,89 @@ open class WindVpnController
         private val localDbInterface: LocalDbInterface,
         private val deviceStateManager: DeviceStateManager,
         private val excludedIpHolder: ExcludedIpHolder,
+        private val apexGuardService: ApexGuardService? = null,
+        private val apexGrantStore: ApexGuardGrantStore? = null,
     ) {
         private val logger = LoggerFactory.getLogger("vpn")
+        private val connectionGeneration = AtomicLong()
+        private val connectMutex = Mutex()
+        private val usesApexGuard get() = BuildConfig.APEXGUARD_ENABLED && apexGuardService != null
+
+        private suspend fun createApexGuardProfile(
+            protocol: ProtocolInformation,
+            attempt: Int,
+            generation: Long,
+        ): ProtocolInformation {
+            val service = requireNotNull(apexGuardService)
+            if (attempt > 0) check(service.authenticated.value)
+            val selected =
+                localDbInterface.getDatacenterAndLocation(preferencesHelper.selectedCity)
+                    ?: error("Selected location unavailable")
+            val grant =
+                if (attempt > 0) {
+                    requireNotNull(apexGrantStore?.retry(selected.datacenter.id, protocol.protocol, attempt))
+                } else {
+                    service.connect(selected.datacenter.id, protocol.protocol).also {
+                        apexGrantStore?.remember(selected.datacenter.id, protocol.protocol, it)
+                    }
+                }
+            if (generation != connectionGeneration.get()) throw CancellationException("Connection superseded")
+            val effectiveProtocol =
+                ProtocolInformation(
+                    grant.protocol,
+                    if (grant.protocol == "ikev2") "500" else "443",
+                    if (grant.protocol == "ikev2") appContext.getString(R.string.iKEV2_description) else "",
+                    ProtocolConnectionStatus.Disconnected,
+                )
+            val city = selected.datacenter
+            val coordinates = city.coordinates?.split(',')?.takeIf { it.size == 2 }
+            val latitude = coordinates?.get(0)?.trim()?.toDoubleOrNull()
+            val longitude = coordinates?.get(1)?.trim()?.toDoubleOrNull()
+            val validCoordinates =
+                latitude != null &&
+                    longitude != null &&
+                    latitude.isFinite() &&
+                    longitude.isFinite() &&
+                    latitude in -90.0..90.0 &&
+                    longitude in -180.0..180.0
+            val location =
+                LastSelectedLocation(
+                    city.id,
+                    city.nodeName ?: "",
+                    city.nickName ?: "",
+                    selected.location?.countryCode,
+                    // Missing or invalid catalog coordinates must never use the constructor's
+                    // historical defaults as a fabricated GPS location.
+                    lat = latitude?.toString().takeIf { validCoordinates },
+                    lang = longitude?.toString().takeIf { validCoordinates },
+                )
+            when (grant.protocol) {
+                "ikev2" -> {
+                    val endpoint = grant.endpoints[attempt]
+                    vpnProfileCreator.createIkEV2Profile(
+                        location,
+                        VPNParameters(endpoint.ip, "", "", "", endpoint.domain, "", ""),
+                        effectiveProtocol,
+                        grant.username to grant.password,
+                    )
+                }
+                "xray" -> {
+                    val vless = requireNotNull(grant.vless)
+                    val config = XrayTunnelConfig(vless)
+                    preferencesHelper.selectedProtocol = "xray"
+                    preferencesHelper.selectedPort = vless.port.toString()
+                    preferencesHelper.selectedIp = vless.host
+                    effectiveProtocol.port = vless.port.toString()
+                    Util.saveSelectedLocation(location)
+                    Util.saveProfile(config)
+                }
+                else -> error("Unsupported grant protocol")
+            }
+            autoConnectionManager.setSelectedProtocol(effectiveProtocol)
+            return effectiveProtocol
+        }
+
+        fun canRetryApexGuardEndpoint(attempt: Int): Boolean = apexGrantStore?.hasNextEndpoint(attempt) == true
 
         private suspend fun createVPNProfile(
             protocolInformation: ProtocolInformation,
@@ -319,12 +407,15 @@ open class WindVpnController
             waitForNextProtocol: Boolean = false,
             reconnecting: Boolean = false,
         ) {
+            if (!reconnecting) connectionGeneration.incrementAndGet()
             scope.launch {
-                disconnect(
-                    waitForNextProtocol,
-                    reconnecting,
-                    error = VPNState.Error(error = VPNState.ErrorType.UserDisconnect),
-                )
+                connectMutex.withLock {
+                    disconnect(
+                        waitForNextProtocol,
+                        reconnecting,
+                        error = VPNState.Error(error = VPNState.ErrorType.UserDisconnect),
+                    )
+                }
             }
         }
 
@@ -336,8 +427,9 @@ open class WindVpnController
             reconnecting: Boolean = false,
             error: VPNState.Error?,
         ) {
+            if (!reconnecting) connectionGeneration.incrementAndGet()
             scope.launch {
-                disconnect(waitForNextProtocol, reconnecting, error)
+                connectMutex.withLock { disconnect(waitForNextProtocol, reconnecting, error) }
             }
         }
 
@@ -350,30 +442,36 @@ open class WindVpnController
             attempt: Int = 0,
             hostname: String? = null,
         ) {
-            when {
-                // Disconnect from VPN and connect to next selected location.
-                vpnBackendHolder.activeBackend?.active == true -> {
-                    preferencesHelper.isReconnecting = true
-                    disconnect(
-                        reconnecting = true,
-                        error = VPNState.Error(error = VPNState.ErrorType.UserReconnect),
-                    )
-                    createProfileAndLaunchService(
-                        connectionId,
-                        protocolInformation,
-                        attempt,
-                        hostname,
-                    )
-                }
+            val generation = connectionGeneration.incrementAndGet()
+            connectMutex.withLock {
+                if (generation != connectionGeneration.get()) return
+                when {
+                    // Disconnect from VPN and connect to next selected location.
+                    vpnBackendHolder.activeBackend?.active == true -> {
+                        preferencesHelper.isReconnecting = true
+                        disconnect(
+                            reconnecting = true,
+                            error = VPNState.Error(error = VPNState.ErrorType.UserReconnect),
+                        )
+                        createProfileAndLaunchService(
+                            connectionId,
+                            protocolInformation,
+                            attempt,
+                            hostname,
+                            generation,
+                        )
+                    }
 
-                else -> {
-                    // Make a fresh connection
-                    createProfileAndLaunchService(
-                        connectionId,
-                        protocolInformation,
-                        attempt,
-                        hostname,
-                    )
+                    else -> {
+                        // Make a fresh connection
+                        createProfileAndLaunchService(
+                            connectionId,
+                            protocolInformation,
+                            attempt,
+                            hostname,
+                            generation,
+                        )
+                    }
                 }
             }
         }
@@ -383,6 +481,7 @@ open class WindVpnController
             selectedProtocol: ProtocolInformation? = null,
             attempt: Int = 0,
             hostname: String? = null,
+            generation: Long,
         ) {
             try {
                 logger.debug("Connecting to VPN with connectionId: $connectionId")
@@ -401,15 +500,23 @@ open class WindVpnController
                 } else {
                     excludedIpHolder.clear()
                 }
-                val profileToConnect = createVPNProfile(protocolInformation, attempt, hostname)
-                logger.info("Location: $profileToConnect")
-                launchVPNService(protocolInformation, connectionId)
+                val effectiveProtocol =
+                    if (usesApexGuard) {
+                        createApexGuardProfile(protocolInformation, attempt, generation)
+                    } else {
+                        val profileToConnect = createVPNProfile(protocolInformation, attempt, hostname)
+                        logger.info("Location: $profileToConnect")
+                        protocolInformation
+                    }
+                if (generation != connectionGeneration.get()) return
+                launchVPNService(effectiveProtocol, connectionId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 if (e is InvalidVPNConfigException) {
                     handleVPNError(e.error, connectionId, selectedProtocol)
                 } else {
-                    logger.debug(e.message)
-                    disconnect()
+                    logger.debug("VPN profile setup failed")
+                    disconnect(error = VPNState.Error(VPNState.ErrorType.GenericError, showError = true))
                 }
             }
         }
@@ -418,8 +525,8 @@ open class WindVpnController
             // use default protocol if list protocol is not ready yet.
             if (autoConnectionManager.listOfProtocols.isEmpty()) {
                 return ProtocolInformation(
-                    PROTO_WIRE_GUARD,
-                    PreferencesKeyConstants.DEFAULT_WIRE_GUARD_PORT,
+                    if (usesApexGuard) PROTO_IKev2 else PROTO_WIRE_GUARD,
+                    if (usesApexGuard) "500" else PreferencesKeyConstants.DEFAULT_WIRE_GUARD_PORT,
                     "WireGuard is a modern, high-performance VPN protocol.",
                     ProtocolConnectionStatus.Disconnected,
                 )
@@ -460,6 +567,17 @@ open class WindVpnController
                 WindStunnelUtility.stopLocalTunFromAppContext(appContext)
             }
             vpnBackendHolder.disconnect(error)
+            if (usesApexGuard && !reconnecting) {
+                apexGrantStore?.clear()
+                Util.clearProfile()
+                try {
+                    apexGuardService?.disconnect()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    logger.warn("Remote VPN session cleanup failed")
+                }
+            }
 
             // Only whitelist on user-initiated disconnect (not system errors or reconnecting)
             val isUserDisconnect = error?.error == VPNState.ErrorType.UserDisconnect
@@ -474,7 +592,16 @@ open class WindVpnController
 
             if (vpnConnectionStateManager.state.value.status != Disconnected) {
                 // Force disconnect if state did not change to disconnect
-                vpnConnectionStateManager.setState(VPNState(Disconnected, error = error), true)
+                val previous = vpnConnectionStateManager.state.value
+                vpnConnectionStateManager.setState(
+                    VPNState(
+                        Disconnected,
+                        error = error,
+                        protocolInformation = previous.protocolInformation,
+                        connectionId = previous.connectionId,
+                    ),
+                    true,
+                )
                 delay(100)
             }
             checkForReconnect()

@@ -112,6 +112,7 @@ import com.windscribe.mobile.ui.theme.font12
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.font26
 import com.windscribe.mobile.ui.theme.font9
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.autoconnection.ProtocolConnectionStatus
 import com.windscribe.vpn.autoconnection.ProtocolInformation
 import com.windscribe.vpn.backend.Util
@@ -153,6 +154,25 @@ private fun HandleGotoAction(
 ) {
     val context = LocalContext.current
     val navController = LocalNavController.current
+    if (BuildConfig.APEXGUARD_ENABLED &&
+        (
+            goto is HomeGoto.Banned ||
+                goto is HomeGoto.Downgraded ||
+                goto is HomeGoto.Expired ||
+                goto is HomeGoto.Upgrade ||
+                goto is HomeGoto.ShareAppLink ||
+                goto is HomeGoto.EditCustomConfig ||
+                goto is HomeGoto.IpActionError ||
+                goto is HomeGoto.UpdateAvailable
+        )
+    ) {
+        LaunchedEffect(goto) {
+            connectionViewmodel.onGoToHandled()
+            homeViewmodel.onGoToHandled()
+            bridgeApiViewModel.onGoToHandled()
+        }
+        return
+    }
     var didNavigate = false
     when (goto) {
         HomeGoto.Banned -> {
@@ -351,7 +371,9 @@ private fun CompactUI(
             LocationName(connectionViewmodel)
             Spacer(modifier = Modifier.weight(1.0f))
         }
-        IPContextMenu(bridgeApiViewModel)
+        if (!BuildConfig.APEXGUARD_ENABLED) {
+            IPContextMenu(bridgeApiViewModel)
+        }
         Box(
             modifier =
                 Modifier
@@ -627,7 +649,7 @@ internal fun BoxScope.NetworkInfoSheet(
                     }
                 }
             }
-            if (!showContextMenu.first && showIpAndIcon) {
+            if (!BuildConfig.APEXGUARD_ENABLED && !showContextMenu.first && showIpAndIcon) {
                 Image(
                     painter = painterResource(R.drawable.ic_context),
                     contentDescription = null,
@@ -831,12 +853,12 @@ private fun HeaderContent(
                     Modifier
                         .testTag("newsfeed_open")
                         .height(18.dp)
-                        .clickable {
+                        .clickable(enabled = !BuildConfig.APEXGUARD_ENABLED) {
                             onNewsfeedClick()
                         },
                 contentScale = ContentScale.FillHeight,
             )
-            if (userState is UserState.Pro) {
+            if (!BuildConfig.APEXGUARD_ENABLED && userState is UserState.Pro) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Image(
                     painter = painterResource(R.drawable.header_pro_icon),
@@ -850,7 +872,7 @@ private fun HeaderContent(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }
-            if (newsfeedCount > 0) {
+            if (!BuildConfig.APEXGUARD_ENABLED && newsfeedCount > 0) {
                 Box(
                     modifier =
                         Modifier

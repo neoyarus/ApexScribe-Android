@@ -2,6 +2,7 @@ package com.windscribe.vpn.autoconnection
 
 import android.os.Build
 import androidx.fragment.app.DialogFragment
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 import com.windscribe.vpn.Windscribe
 import com.windscribe.vpn.Windscribe.Companion.appContext
@@ -131,7 +132,7 @@ class AutoConnectionManager(
         attempt: Int = 0,
         protocolInformation: ProtocolInformation? = null,
     ): VPNState {
-        attemptJob?.cancel()
+        if (attempt == 0) attemptJob?.cancel()
         return try {
             runBlocking {
                 attemptJob = coroutineContext[Job]
@@ -147,7 +148,7 @@ class AutoConnectionManager(
                         .state
                         .first {
                             if (it.connectionId == newConnectionId) {
-                                if (it.error?.error == VPNState.ErrorType.AuthenticationError) {
+                                if (it.error?.error == VPNState.ErrorType.AuthenticationError && !BuildConfig.APEXGUARD_ENABLED) {
                                     logger.debug("Updating user auth credentials.")
                                     if (connectionDataRepository.update()) {
                                         logger.debug("Auth updated successfully.")
@@ -182,7 +183,7 @@ class AutoConnectionManager(
                 // Check if we should retry with different node (only in auto mode)
                 val isAutoMode = preferencesHelper.connectionMode == PreferencesKeyConstants.CONNECTION_MODE_AUTO
                 val shouldRetryNode =
-                    attempt == 0 &&
+                    (if (BuildConfig.APEXGUARD_ENABLED) vpnController.get().canRetryApexGuardEndpoint(attempt) else attempt == 0) &&
                         isAutoMode &&
                         vpnState.error?.error in
                         listOf(
@@ -195,7 +196,7 @@ class AutoConnectionManager(
                 if (shouldRetryNode) {
                     logger.info("Retrying with different node for error: ${vpnState.error?.error}")
                     return@runBlocking connectionAttempt(
-                        attempt = 1,
+                        attempt = attempt + 1,
                         protocolInformation = protocolInformation,
                     )
                 }
@@ -350,6 +351,7 @@ class AutoConnectionManager(
     ) {
         val port: String =
             when (protocol) {
+                "xray" -> "443"
                 PreferencesKeyConstants.PROTO_IKev2 -> preferencesHelper.iKEv2Port
                 PreferencesKeyConstants.PROTO_UDP -> preferencesHelper.savedUDPPort
                 PreferencesKeyConstants.PROTO_TCP -> preferencesHelper.savedTCPPort
