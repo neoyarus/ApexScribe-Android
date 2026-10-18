@@ -18,6 +18,7 @@ import com.windscribe.vpn.wsnet.WSNetWrapper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -104,7 +105,9 @@ class XrayBackend
         override suspend fun disconnect(error: VPNState.Error?) =
             disconnectMutex.withLock {
                 this.error = error
-                connectionJob?.cancel()
+                // A connection timeout invokes disconnect from this job itself.
+                // Keep that caller alive until native cleanup and state publication finish.
+                connectionJob?.let { if (it != currentCoroutineContext()[Job]) it.cancel() }
                 stateJob?.cancel()
                 stateJob = null
                 stopNetworkInfoObserver()

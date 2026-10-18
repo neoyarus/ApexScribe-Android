@@ -225,7 +225,9 @@ class IKev2VpnBackend
                 if (proxyDNSManager.invalidConfig) {
                     proxyDNSManager.stopControlD()
                 }
-                connectionJob?.cancel()
+                // The timeout job can be the caller; cancelling it here would abort
+                // teardown at the next suspension before publishing Disconnected.
+                connectionJob?.let { if (it != currentCoroutineContext()[Job]) it.cancel() }
                 vpnLogger.info("Stopping IKEv2 service.")
 
                 // Stop the VPN tunnel by setting next profile to null

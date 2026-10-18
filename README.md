@@ -40,7 +40,7 @@ adb install -r mobile/build/outputs/apk/androidTest/fdroid/debug/mobile-fdroid-d
 adb shell am instrument -w -e class com.windscribe.mobile.ApexDeviceSmokeTest,com.windscribe.mobile.XrayNativeSmokeTest com.apexscribe.android.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-The connected Samsung SM-T725 runs Android 14. The debug APK builds and installs. The focused provider/backend suite passes 33 tests. All four device smoke tests pass: stock activity startup, real provider HTTPS metadata, strongSwan native library loading, and the shipped Xray raw/gRPC core with authenticated loopback SOCKS startup and shutdown. The broader Windows JVM suite passes 210 of 212 tests; unchanged upstream OpenVPN newline parsing and filename-separator tests assume Linux behavior.
+The connected Samsung SM-T725 runs Android 14. The debug APK builds and installs. The focused provider/backend suite passes 35 tests. All four device smoke tests pass: stock activity startup, real provider HTTPS metadata, strongSwan native library loading, and the shipped Xray raw/gRPC core with authenticated loopback SOCKS startup and shutdown. The broader Windows JVM suite passes 210 of 212 tests; unchanged upstream OpenVPN newline parsing and filename-separator tests assume Linux behavior.
 
 Authenticated login, live IKEv2/Xray traffic, and application bypass exit-IP comparisons remain pending tablet unlock and account sign-in. The tablet currently displays "Device locked by admin". Keep the integration draft until those checks pass.
 

@@ -3,7 +3,7 @@ name: Android client
 on:
   pull_request:
   push:
-    branches: [feature/apexguard-android, main]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

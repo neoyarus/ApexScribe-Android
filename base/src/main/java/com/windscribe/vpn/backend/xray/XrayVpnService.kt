@@ -171,7 +171,12 @@ class XrayVpnService : VpnService() {
         )
         check(controller.isRunning)
         coroutineContext.ensureActive()
-        excludedIpHolder.loadCachedIps()
+        if (preferencesHelper.splitTunnelToggle) {
+            excludedIpHolder.loadCachedIps()
+        } else {
+            // Saved destination exclusions must stop bypassing when split tunneling is disabled.
+            excludedIpHolder.clear()
+        }
         val builder =
             Builder()
                 .setSession(getString(R.string.app_name))
