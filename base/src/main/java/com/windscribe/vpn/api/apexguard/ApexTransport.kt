@@ -230,6 +230,11 @@ class ApexTransport
                             continuation.invokeOnCancellation { callback.cancel() }
                         }
                     }
+                } catch (_: TimeoutCancellationException) {
+                    // An individual HTTP deadline is a transport failure. Preserve a
+                    // caller's cancellation, but do not cancel its tunnel cleanup.
+                    currentCoroutineContext().ensureActive()
+                    throw ApexApiException("timeout")
                 } finally {
                     activeNetwork = null
                 }
