@@ -14,6 +14,8 @@ import androidx.compose.ui.text.withLink
 import com.windscribe.mobile.ui.theme.AppColors
 import com.windscribe.mobile.ui.theme.font14
 import com.windscribe.mobile.ui.theme.preferencesSubtitleColor
+import com.windscribe.vpn.BuildConfig
+import java.net.URI
 
 @Composable
 fun DescriptionWithLearnMore(
@@ -21,24 +23,31 @@ fun DescriptionWithLearnMore(
     path: String,
 ) {
     val context = LocalContext.current
+    val vendorLink =
+        runCatching {
+            val host = URI(path).host.orEmpty().lowercase()
+            host == "windscribe.com" || host.endsWith(".windscribe.com")
+        }.getOrDefault(false)
     val annotatedString =
         buildAnnotatedString {
             append("$description ")
-            withLink(
-                LinkAnnotation.Clickable(
-                    tag = "LEARN_MORE",
-                    styles =
-                        TextLinkStyles(
-                            style =
-                                SpanStyle(
-                                    color = AppColors.mediumBlue,
-                                    fontWeight = FontWeight.Medium,
-                                ),
-                        ),
-                    linkInteractionListener = { context.openUrl(path) },
-                ),
-            ) {
-                append("Learn more")
+            if (!BuildConfig.APEXGUARD_ENABLED || !vendorLink) {
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "LEARN_MORE",
+                        styles =
+                            TextLinkStyles(
+                                style =
+                                    SpanStyle(
+                                        color = AppColors.mediumBlue,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                            ),
+                        linkInteractionListener = { context.openUrl(path) },
+                    ),
+                ) {
+                    append("Learn more")
+                }
             }
         }
 

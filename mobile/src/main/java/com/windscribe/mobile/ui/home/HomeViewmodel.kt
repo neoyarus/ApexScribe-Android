@@ -220,7 +220,9 @@ class HomeViewmodelImpl
                             ),
                         )
                     }
-                    showUserStatus(it)
+                    if (!it.providerManaged) {
+                        showUserStatus(it)
+                    }
                 }
             }
         }

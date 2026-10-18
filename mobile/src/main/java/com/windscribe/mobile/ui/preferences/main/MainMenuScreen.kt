@@ -43,6 +43,7 @@ import com.windscribe.mobile.ui.nav.Screen
 import com.windscribe.mobile.ui.theme.AppColors
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.primaryTextColor
+import com.windscribe.vpn.BuildConfig
 import com.windscribe.vpn.R
 
 /**
@@ -88,13 +89,15 @@ fun MainMenuContent(
                 Screen.General.route,
                 hapticFeedbackEnabled,
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            MainMenuItem(
-                R.string.my_account,
-                com.windscribe.mobile.R.drawable.ic_myaccount_icon,
-                Screen.Account.route,
-                hapticFeedbackEnabled,
-            )
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Spacer(modifier = Modifier.height(16.dp))
+                MainMenuItem(
+                    R.string.my_account,
+                    com.windscribe.mobile.R.drawable.ic_myaccount_icon,
+                    Screen.Account.route,
+                    hapticFeedbackEnabled,
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
             MainMenuItem(
                 R.string.connection,
@@ -102,14 +105,16 @@ fun MainMenuContent(
                 Screen.Connection.route,
                 hapticFeedbackEnabled,
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            MainMenuItem(
-                R.string.robert,
-                com.windscribe.mobile.R.drawable.ic_robert,
-                Screen.Robert.route,
-                hapticFeedbackEnabled,
-            )
-            if (showReferData) {
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Spacer(modifier = Modifier.height(16.dp))
+                MainMenuItem(
+                    R.string.robert,
+                    com.windscribe.mobile.R.drawable.ic_robert,
+                    Screen.Robert.route,
+                    hapticFeedbackEnabled,
+                )
+            }
+            if (showReferData && !BuildConfig.APEXGUARD_ENABLED) {
                 Spacer(modifier = Modifier.height(16.dp))
                 MainMenuItem(
                     R.string.refer_for_data,

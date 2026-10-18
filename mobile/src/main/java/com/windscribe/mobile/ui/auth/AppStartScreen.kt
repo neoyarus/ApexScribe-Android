@@ -384,7 +384,9 @@ fun ActionSection(
         GoogleButton(signInIntent, actions)
         LoginButton(actions)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            EmergencyConnectButton(isConnected)
+            if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                EmergencyConnectButton(isConnected)
+            }
             Spacer(modifier = Modifier.weight(1f))
             SignupButton(actions)
             Spacer(modifier = Modifier.width(8.dp))

@@ -30,6 +30,7 @@ import com.windscribe.mobile.ui.nav.LocalNavController
 import com.windscribe.mobile.ui.theme.AppColors
 import com.windscribe.mobile.ui.theme.font16
 import com.windscribe.mobile.ui.theme.font24
+import com.windscribe.vpn.BuildConfig
 
 /**
  * Stateful entry point. The [AppStartActivityViewModel] is activity-scoped (it carries the
@@ -98,16 +99,18 @@ fun AllProtocolFailedContent(
                 color = AppColors.white,
                 textAlign = TextAlign.Center,
             )
-            Text(
-                text = networkHatesUsDescription,
-                style = font16,
-                color = AppColors.white,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            Spacer(modifier = Modifier.padding(top = 24.dp))
-            NextButton(Modifier, text = stringResource(com.windscribe.vpn.R.string.send_debug_log), true) {
-                onSendLogClick()
+            if (!BuildConfig.APEXGUARD_ENABLED) {
+                Text(
+                    text = networkHatesUsDescription,
+                    style = font16,
+                    color = AppColors.white,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+                Spacer(modifier = Modifier.padding(top = 24.dp))
+                NextButton(Modifier, text = stringResource(com.windscribe.vpn.R.string.send_debug_log), true) {
+                    onSendLogClick()
+                }
             }
             TextButton(onClick = onCancelClick) {
                 Text(

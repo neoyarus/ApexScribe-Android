@@ -120,7 +120,27 @@ open class WindVpnController
                     ProtocolConnectionStatus.Disconnected,
                 )
             val city = selected.datacenter
-            val location = LastSelectedLocation(city.id, city.nodeName ?: "", city.nickName ?: "", selected.location?.countryCode)
+            val coordinates = city.coordinates?.split(',')?.takeIf { it.size == 2 }
+            val latitude = coordinates?.get(0)?.trim()?.toDoubleOrNull()
+            val longitude = coordinates?.get(1)?.trim()?.toDoubleOrNull()
+            val validCoordinates =
+                latitude != null &&
+                    longitude != null &&
+                    latitude.isFinite() &&
+                    longitude.isFinite() &&
+                    latitude in -90.0..90.0 &&
+                    longitude in -180.0..180.0
+            val location =
+                LastSelectedLocation(
+                    city.id,
+                    city.nodeName ?: "",
+                    city.nickName ?: "",
+                    selected.location?.countryCode,
+                    // Missing or invalid catalog coordinates must never use the constructor's
+                    // historical defaults as a fabricated GPS location.
+                    lat = latitude?.toString().takeIf { validCoordinates },
+                    lang = longitude?.toString().takeIf { validCoordinates },
+                )
             when (grant.protocol) {
                 "ikev2" -> {
                     val endpoint = grant.endpoints[attempt]

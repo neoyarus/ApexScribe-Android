@@ -44,6 +44,7 @@ import com.windscribe.mobile.ui.helper.hapticClickable
 import com.windscribe.mobile.ui.theme.serverListBackgroundColor
 import com.windscribe.mobile.ui.theme.serverListNavigationGradientEnd
 import com.windscribe.mobile.ui.theme.serverListSecondaryColor
+import com.windscribe.vpn.BuildConfig
 
 data class ServerTabIcon(
     val unfilledIcon: Int,
@@ -93,7 +94,9 @@ fun ServerListNavigation(
                 R.drawable.ic_location_config_filled,
                 ServerListType.Config,
             ),
-        )
+        ).filter {
+            !BuildConfig.APEXGUARD_ENABLED || it.type == ServerListType.All || it.type == ServerListType.Fav
+        }
     val gradientStart = MaterialTheme.colorScheme.serverListBackgroundColor
     val gradientEnd = MaterialTheme.colorScheme.serverListNavigationGradientEnd
     val borderColor = MaterialTheme.colorScheme.serverListSecondaryColor

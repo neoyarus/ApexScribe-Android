@@ -77,6 +77,7 @@ class ApexGuardConnectionTest {
                         id = 7
                         nodeName = "City"
                         nickName = "City"
+                        coordinates = "48.8566,2.3522"
                     }
             }
     }
@@ -137,6 +138,7 @@ class ApexGuardConnectionTest {
             assertEquals("xray", launched?.protocol)
             assertEquals("8443", launched?.port)
             verify { Util.saveProfile(match { it is XrayTunnelConfig && it.vless == link }) }
+            verify { Util.saveSelectedLocation(match { it.lat == "48.8566" && it.lang == "2.3522" }) }
             verify(exactly = 0) { creator.createIkEV2Profile(any(), any(), any(), any()) }
         }
 
@@ -148,7 +150,7 @@ class ApexGuardConnectionTest {
             assertEquals("ikev2", launched?.protocol)
             verify {
                 creator.createIkEV2Profile(
-                    any(),
+                    match { it.lat == "48.8566" && it.lang == "2.3522" },
                     match { it.ikev2Ip == "198.51.100.4" && it.hostName == "gateway.example" },
                     match {
                         it.protocol ==
@@ -168,6 +170,21 @@ class ApexGuardConnectionTest {
             assertEquals(VPNState.Status.Disconnected, states.value.status)
             assertEquals(id, states.value.connectionId)
             assertNull(launched)
+        }
+
+    @Test fun `missing malformed or out of range catalog coordinates disable GPS metadata`() =
+        runTest {
+            val savedLocations = mutableListOf<LastSelectedLocation>()
+            every { Util.saveSelectedLocation(capture(savedLocations)) } just Runs
+            coEvery { api.connect(7, "xray", false) } returns ApexGrant("xray", "", "", emptyList(), "ABC", vless())
+            val city = database.getDatacenterAndLocation(7)!!.datacenter
+            for (coordinates in listOf(null, "", "48.8", "48.8,2.3,1", "NaN,2.3", "48.8,Infinity", "91,2.3", "48.8,-181")) {
+                city.coordinates = coordinates
+                controller().connect(protocolInformation = protocol("xray"))
+                assertEquals("xray", launched?.protocol)
+                assertNull(savedLocations.last().lat)
+                assertNull(savedLocations.last().lang)
+            }
         }
 
     @Test fun `all sibling endpoints use one remote grant in original order`() =

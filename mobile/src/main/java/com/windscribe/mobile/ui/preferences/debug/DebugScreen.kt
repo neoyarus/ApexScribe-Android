@@ -98,7 +98,7 @@ private fun exportLog(context: Context) {
         val fileUri: Uri =
             FileProvider.getUriForFile(
                 context,
-                "com.windscribe.vpn.provider",
+                "${context.packageName}.provider",
                 logFile,
             )
         val shareIntent =

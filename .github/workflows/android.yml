@@ -32,7 +32,7 @@ jobs:
           chmod +x gradlew
           ./gradlew :mobile:assembleFdroidDebug :mobile:assembleFdroidDebugAndroidTest :networkprobe:assembleDebug -PincludeNetworkProbe=true -PabiFilter=arm64-v8a --console=plain
       - name: Test provider and VPN integration
-        run: ./gradlew :base:testFdroidDebugUnitTest --tests '*Apex*' --tests '*Xray*Test' --tests '*ProtectedDialerTest' --tests '*WindVpnControllerForceDisconnectTest' -PabiFilter=arm64-v8a --console=plain
+        run: ./gradlew :base:testFdroidDebugUnitTest --tests '*Apex*' --tests '*Xray*Test' --tests '*ProtectedDialerTest' --tests '*WindVpnControllerForceDisconnectTest' :mobile:testFdroidDebugUnitTest --tests '*ApexNavigationPolicyTest' -PabiFilter=arm64-v8a --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: ApexScribe-Android-arm64

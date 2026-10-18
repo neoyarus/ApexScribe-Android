@@ -256,11 +256,13 @@ fun ConnectionContent(
                     R.string.split_tunneling,
                     Screen.SplitTunnel,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                ConnectionItem(
-                    R.string.anti_censorship_settings,
-                    Screen.AntiCensorship,
-                )
+                if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ConnectionItem(
+                        R.string.anti_censorship_settings,
+                        Screen.AntiCensorship,
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 AlwaysOnVPN()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -318,8 +320,10 @@ fun ConnectionContent(
                         }
                     },
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                DecoyTrafficMode(state, actions)
+                if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DecoyTrafficMode(state, actions)
+                }
             }
         }
     }
@@ -608,11 +612,13 @@ private fun CustomDNSAddress(
             enabled = enabled,
             value = address,
             placeholder = {
-                Text(
-                    stringResource(R.string.custom_dns_address_hint),
-                    style = font16,
-                    color = MaterialTheme.colorScheme.primaryTextColor,
-                )
+                if (!com.windscribe.vpn.BuildConfig.APEXGUARD_ENABLED) {
+                    Text(
+                        stringResource(R.string.custom_dns_address_hint),
+                        style = font16,
+                        color = MaterialTheme.colorScheme.primaryTextColor,
+                    )
+                }
             },
             textStyle = font16.copy(textAlign = TextAlign.Start),
             singleLine = true,
