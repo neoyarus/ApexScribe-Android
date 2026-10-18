@@ -20,6 +20,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Verify pinned native dependencies
         run: |
           echo 'fd6cb61fed873e465c3064327dffbcb22dc3fd78260d162ec9e868db2582495f  xray/libs/libv2ray.aar' | sha256sum -c
